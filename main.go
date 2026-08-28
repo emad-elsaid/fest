@@ -102,6 +102,11 @@ func newSystemd(res ResourceName, unit, fn, file, msg string, user bool, wanted 
 
 // allManagers returns all package managers in the order they should be processed.
 func allManagers() []packageManager {
+	userServices := newSystemd(ResourceUserServices, "service", "Service", "services.go", "user services", true, &services)
+	userServices.socketWanted = &sockets
+	sysServices := newSystemd(ResourceSystemServices, "service", "SystemService", "system_services.go", "system services", false, &systemServices)
+	sysServices.socketWanted = &systemSockets
+
 	return []packageManager{
 		systemConfigManager{},
 		pacman{},
@@ -112,10 +117,10 @@ func allManagers() []packageManager {
 		userGroups{},
 		symlinks{},
 		systemFiles{},
-		newSystemd(ResourceUserServices, "service", "Service", "services.go", "user services", true, &services),
+		userServices,
 		newSystemd(ResourceUserTimers, "timer", "Timer", "timers.go", "user timers", true, &timers),
 		newSystemd(ResourceUserSockets, "socket", "Socket", "sockets.go", "user sockets", true, &sockets),
-		newSystemd(ResourceSystemServices, "service", "SystemService", "system_services.go", "system services", false, &systemServices),
+		sysServices,
 		newSystemd(ResourceSystemTimers, "timer", "SystemTimer", "system_timers.go", "system timers", false, &systemTimers),
 		newSystemd(ResourceSystemSockets, "socket", "SystemSocket", "system_sockets.go", "system sockets", false, &systemSockets),
 	}

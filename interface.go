@@ -49,6 +49,13 @@ type packageManager interface {
 	SaveAsGo(wanted []string) error
 }
 
+// implicitWanter is implemented by package managers whose resources may appear
+// implicitly because a declared resource triggers them (e.g. a service activated
+// by a declared socket).
+type implicitWanter interface {
+	ImplicitWanted() []string
+}
+
 // Callback is a function that can be executed before or after a package manager operation.
 type Callback func()
 
@@ -157,6 +164,31 @@ func executeCallbacks(resourceName string, callbackMap map[string][]Callback, wh
 	return nil
 }
 
+// implicitWanted returns resources that are implicitly present because another
+// declared resource triggers them (e.g. a service activated by a declared
+// socket). These must never be uninstalled. Managers without implicit resources
+// return nil.
+func implicitWanted(pm packageManager) []string {
+	if iw, ok := pm.(implicitWanter); ok {
+		return iw.ImplicitWanted()
+	}
+	return nil
+}
+
+// unwantedResources returns installed resources that are neither explicitly
+// wanted, implicitly wanted, nor kept as a dependency of a wanted resource.
+func unwantedResources(pm packageManager, installed, wanted, implicit []string, keep map[string]bool) []string {
+	var toUninstall []string
+	for _, installedPkg := range installed {
+		isWanted := lo.ContainsBy(wanted, func(w string) bool { return pm.Match(w, installedPkg) }) ||
+			lo.ContainsBy(implicit, func(w string) bool { return pm.Match(w, installedPkg) })
+		if !isWanted && !keep[installedPkg] {
+			toUninstall = append(toUninstall, installedPkg)
+		}
+	}
+	return toUninstall
+}
+
 // syncPackages syncs the system state with wanted packages.
 // It installs missing packages, marks implicit packages as explicit, and optionally removes unwanted ones.
 func syncPackages(pm packageManager, wanted []string) error {
@@ -192,13 +224,7 @@ func syncPackages(pm packageManager, wanted []string) error {
 		return err
 	}
 	keep := getKeepPackages(wanted, deps)
-	var toUninstall []string
-	for _, installedPkg := range installed {
-		isWanted := lo.ContainsBy(wanted, func(w string) bool { return pm.Match(w, installedPkg) })
-		if !isWanted && !keep[installedPkg] {
-			toUninstall = append(toUninstall, installedPkg)
-		}
-	}
+	toUninstall := unwantedResources(pm, installed, wanted, implicitWanted(pm), keep)
 	if len(toUninstall) == 0 {
 		if len(toInstall) == 0 && len(toMark) == 0 {
 			logSuccess(rn + ": up to date")
@@ -239,13 +265,7 @@ func diffPackages(pm packageManager, wanted []string) error {
 		return err
 	}
 	keep := getKeepPackages(wanted, deps)
-	var toUninstall []string
-	for _, installedPkg := range installed {
-		isWanted := lo.ContainsBy(wanted, func(w string) bool { return pm.Match(w, installedPkg) })
-		if !isWanted && !keep[installedPkg] {
-			toUninstall = append(toUninstall, installedPkg)
-		}
-	}
+	toUninstall := unwantedResources(pm, installed, wanted, implicitWanted(pm), keep)
 	if len(toInstall) == 0 && len(toMark) == 0 && len(toUninstall) == 0 {
 		logSuccess(rn + ": no changes")
 		return nil
