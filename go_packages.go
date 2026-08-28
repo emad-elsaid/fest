@@ -13,7 +13,10 @@ import (
 
 const ResourceGoPackages ResourceName = "Go packages"
 
-var wantedGoPackages []string
+var (
+	wantedGoPackages []string
+	goListCache      listCache
+)
 
 type goPackages struct{}
 
@@ -77,37 +80,39 @@ func (g goPackages) getBinaryModule(binPath string) (string, error) {
 }
 
 func (g goPackages) ListInstalled() ([]string, error) {
-	if _, err := types.Cmd("go", "version").StdoutErr(); err != nil {
-		slog.Debug("go is not installed or not available")
-		return []string{}, nil
-	}
-
-	goBin, err := g.getGoBin()
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := os.ReadDir(goBin)
-	if os.IsNotExist(err) {
-		return []string{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	var installed []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
+	return goListCache.getOrSet(func() ([]string, error) {
+		if _, err := types.Cmd("go", "version").StdoutErr(); err != nil {
+			slog.Debug("go is not installed or not available")
+			return []string{}, nil
 		}
-		binPath := filepath.Join(goBin, entry.Name())
-		modulePath, err := g.getBinaryModule(binPath)
+
+		goBin, err := g.getGoBin()
 		if err != nil {
-			continue
+			return nil, err
 		}
-		installed = append(installed, modulePath)
-	}
-	return installed, nil
+
+		entries, err := os.ReadDir(goBin)
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		var installed []string
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			binPath := filepath.Join(goBin, entry.Name())
+			modulePath, err := g.getBinaryModule(binPath)
+			if err != nil {
+				continue
+			}
+			installed = append(installed, modulePath)
+		}
+		return installed, nil
+	})
 }
 
 func (g goPackages) ListExplicit() ([]string, error) {
@@ -115,6 +120,8 @@ func (g goPackages) ListExplicit() ([]string, error) {
 }
 
 func (g goPackages) Install(pkgs []string) error {
+	defer goListCache.invalidate()
+
 	if _, err := types.Cmd("go", "version").StdoutErr(); err != nil {
 		slog.Warn("go is not installed, skipping Go package installation")
 		return nil
@@ -134,6 +141,8 @@ func (g goPackages) Install(pkgs []string) error {
 }
 
 func (g goPackages) Uninstall(pkgs []string) error {
+	defer goListCache.invalidate()
+
 	if _, err := types.Cmd("go", "version").StdoutErr(); err != nil {
 		return nil
 	}

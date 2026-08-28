@@ -11,7 +11,10 @@ import (
 
 const ResourceNpmPackages ResourceName = "npm packages"
 
-var wantedNpmPackages []string
+var (
+	wantedNpmPackages []string
+	npmListCache      listCache
+)
 
 // NpmPackage declares global npm packages to install.
 // Supports version pinning using @version syntax.
@@ -57,30 +60,29 @@ type npmListOutput struct {
 }
 
 func (n npmPackages) ListInstalled() ([]string, error) {
-	if _, err := types.Cmd("npm", "--version").StdoutErr(); err != nil {
-		slog.Debug("npm is not installed or not available")
-		return []string{}, nil
-	}
-
-	stdout, err := types.Cmd("npm", "list", "-g", "--depth=0", "--json").StdoutErr()
-	if err != nil {
-		// npm list returns non-zero if there are issues, but still outputs JSON
-		// So we continue if we got output
-		if stdout == "" {
-			return nil, err
+	return npmListCache.getOrSet(func() ([]string, error) {
+		stdout, err := types.Cmd("npm", "list", "-g", "--depth=0", "--json").StdoutErr()
+		if err != nil {
+			// npm list returns non-zero if there are issues, but still outputs JSON.
+			// Empty output with an error means npm is missing or unavailable, which
+			// we treat as an empty install rather than a hard failure.
+			if stdout == "" {
+				slog.Debug("npm is not installed or not available")
+				return []string{}, nil
+			}
 		}
-	}
 
-	var output npmListOutput
-	if err := json.Unmarshal([]byte(stdout), &output); err != nil {
-		return nil, fmt.Errorf("failed to parse npm list output: %w", err)
-	}
+		var output npmListOutput
+		if err := json.Unmarshal([]byte(stdout), &output); err != nil {
+			return nil, fmt.Errorf("failed to parse npm list output: %w", err)
+		}
 
-	var packages []string
-	for name, info := range output.Dependencies {
-		packages = append(packages, name+"@"+info.Version)
-	}
-	return packages, nil
+		var packages []string
+		for name, info := range output.Dependencies {
+			packages = append(packages, name+"@"+info.Version)
+		}
+		return packages, nil
+	})
 }
 
 func (n npmPackages) ListExplicit() ([]string, error) {
@@ -88,6 +90,8 @@ func (n npmPackages) ListExplicit() ([]string, error) {
 }
 
 func (n npmPackages) Install(pkgs []string) error {
+	defer npmListCache.invalidate()
+
 	if _, err := types.Cmd("npm", "--version").StdoutErr(); err != nil {
 		slog.Warn("npm is not installed, skipping npm package installation")
 		return nil
@@ -113,6 +117,8 @@ func (n npmPackages) Install(pkgs []string) error {
 }
 
 func (n npmPackages) Uninstall(pkgs []string) error {
+	defer npmListCache.invalidate()
+
 	if _, err := types.Cmd("npm", "--version").StdoutErr(); err != nil {
 		return nil
 	}

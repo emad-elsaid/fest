@@ -11,7 +11,24 @@ import (
 
 const ResourceRubyGems ResourceName = "Ruby gems"
 
-var wantedRubyGems []string
+// listGemsRuby enumerates gems installed under the user's home, printing
+// name@version and appending the platform suffix for native (non-ruby) gems.
+var listGemsRuby = `require 'rubygems'
+Gem::Specification.each do |s|
+  next unless s.base_dir.include?(ENV['HOME'])
+  platform = s.platform.to_s
+  if platform == 'ruby'
+    puts "#{s.name}@#{s.version}"
+  else
+    puts "#{s.name}@#{s.version} #{platform}"
+  end
+end
+`
+
+var (
+	wantedRubyGems []string
+	rubyListCache  listCache
+)
 
 // RubyGem declares Ruby gems to install for the current user.
 // Supports version pinning and version constraints:
@@ -59,12 +76,12 @@ func (r rubyGems) Match(want, have string) bool {
 
 func (r rubyGems) matchPessimistic(want, have string) bool {
 	want = strings.TrimSpace(want)
-	
+
 	// Check lower bound: have >= want
 	if r.compareVer(have, want) < 0 {
 		return false
 	}
-	
+
 	// Calculate upper bound by incrementing component before last
 	// ~>1.2 means >= 1.2, < 2.0
 	// ~>1.2.3 means >= 1.2.3, < 1.3.0
@@ -72,13 +89,13 @@ func (r rubyGems) matchPessimistic(want, have string) bool {
 	wantParts := strings.Split(want, ".")
 	upperParts := make([]string, len(wantParts))
 	copy(upperParts, wantParts)
-	
+
 	// Increment the component before the last one (or the only one for single component)
 	incrementIdx := len(wantParts) - 1
 	if len(wantParts) > 1 {
 		incrementIdx = len(wantParts) - 2
 	}
-	
+
 	// Parse the component as integer, increment, convert back
 	var num int
 	for _, c := range upperParts[incrementIdx] {
@@ -89,7 +106,7 @@ func (r rubyGems) matchPessimistic(want, have string) bool {
 		}
 	}
 	num++
-	
+
 	// Format number back to string
 	numStr := ""
 	if num == 0 {
@@ -102,14 +119,14 @@ func (r rubyGems) matchPessimistic(want, have string) bool {
 		}
 	}
 	upperParts[incrementIdx] = numStr
-	
+
 	// Set all components after incrementIdx to 0
 	for i := incrementIdx + 1; i < len(upperParts); i++ {
 		upperParts[i] = "0"
 	}
-	
+
 	upperBound := strings.Join(upperParts, ".")
-	
+
 	// Check upper bound: have < upperBound
 	return r.compareVer(have, upperBound) < 0
 }
@@ -124,31 +141,26 @@ func (r rubyGems) compareVer(v1, v2 string) int {
 }
 
 func (r rubyGems) ListInstalled() ([]string, error) {
-	if _, err := types.Cmd("ruby", "--version").StdoutErr(); err != nil {
-		slog.Debug("ruby is not installed or not available")
-		return []string{}, nil
-	}
-
-	rubyCode := `require 'rubygems'; Gem::Specification.each {|s| puts "#{s.name}@#{s.version} #{s.platform}" if s.base_dir.include?(ENV['HOME']) && s.platform.to_s != 'ruby'}`
-	stdout, err := types.Cmd("ruby", "-e", rubyCode).StdoutErr()
-	if err != nil {
-		return nil, err
-	}
-
-	rubyCode2 := `require 'rubygems'; Gem::Specification.each {|s| puts "#{s.name}@#{s.version}" if s.base_dir.include?(ENV['HOME']) && s.platform.to_s == 'ruby'}`
-	stdout2, err := types.Cmd("ruby", "-e", rubyCode2).StdoutErr()
-	if err != nil {
-		return nil, err
-	}
-
-	var gems []string
-	for line := range strings.SplitSeq(strings.TrimSpace(stdout+"\n"+stdout2), "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			gems = append(gems, line)
+	return rubyListCache.getOrSet(func() ([]string, error) {
+		if _, err := types.Cmd("ruby", "--version").StdoutErr(); err != nil {
+			slog.Debug("ruby is not installed or not available")
+			return []string{}, nil
 		}
-	}
-	return gems, nil
+
+		stdout, err := types.Cmd("ruby", "-e", listGemsRuby).StdoutErr()
+		if err != nil {
+			return nil, err
+		}
+
+		var gems []string
+		for line := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				gems = append(gems, line)
+			}
+		}
+		return gems, nil
+	})
 }
 
 func (r rubyGems) ListExplicit() ([]string, error) {
@@ -156,6 +168,8 @@ func (r rubyGems) ListExplicit() ([]string, error) {
 }
 
 func (r rubyGems) Install(gems []string) error {
+	defer rubyListCache.invalidate()
+
 	if _, err := types.Cmd("gem", "--version").StdoutErr(); err != nil {
 		slog.Warn("gem is not installed, skipping Ruby gem installation")
 		return nil
@@ -183,6 +197,8 @@ func (r rubyGems) Install(gems []string) error {
 }
 
 func (r rubyGems) Uninstall(gems []string) error {
+	defer rubyListCache.invalidate()
+
 	if _, err := types.Cmd("gem", "--version").StdoutErr(); err != nil {
 		return nil
 	}

@@ -10,11 +10,54 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/emad-elsaid/types"
 	"github.com/manifoldco/promptui"
 	"github.com/samber/lo"
 )
+
+// listCache memoizes the result of an expensive ListInstalled scan so that a
+// manager's ListInstalled and ListExplicit (which delegates to it) do not
+// repeat the same work within a single command. Managers invalidate it after
+// any mutation so subsequent scans stay fresh.
+type listCache struct {
+	sync.Mutex
+	result []string
+	cached bool
+}
+
+// getOrSet returns the cached result when present; otherwise it computes it
+// with fn, caches the result on success, and returns it. Errors from fn are
+// returned without caching so a later call retries.
+func (c *listCache) getOrSet(fn func() ([]string, error)) ([]string, error) {
+	c.Lock()
+	if c.cached {
+		result := c.result
+		c.Unlock()
+		return result, nil
+	}
+	c.Unlock()
+
+	result, err := fn()
+	if err != nil {
+		return nil, err
+	}
+
+	c.Lock()
+	c.result = result
+	c.cached = true
+	c.Unlock()
+	return result, nil
+}
+
+// invalidate drops the cached result after a mutation (install/uninstall).
+func (c *listCache) invalidate() {
+	c.Lock()
+	defer c.Unlock()
+	c.result = nil
+	c.cached = false
+}
 
 // addUnique appends items to target slice, skipping duplicates already present in the slice.
 func addUnique(target *[]string, items ...string) {

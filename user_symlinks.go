@@ -89,8 +89,10 @@ func (u symlinks) filterBrokenSymlinks(stdin string) (stdout, stderr string, err
 }
 
 // findBrokenSymlinks uses fd piped to a Go filter function to efficiently find broken symlinks.
+// The walk is read-only and the scanned directories are world-readable, so no
+// elevated privileges are required.
 // Requires: fd (installed via pacman/yay)
-func (u symlinks) findBrokenSymlinks(searchPath string, useSudo bool) ([]string, error) {
+func (u symlinks) findBrokenSymlinks(searchPath string) ([]string, error) {
 	args := []string{"--type", "l", "--absolute-path", "--no-ignore"}
 
 	// Add excluded directories
@@ -101,12 +103,7 @@ func (u symlinks) findBrokenSymlinks(searchPath string, useSudo bool) ([]string,
 	// Add search path at the end
 	args = append(args, ".", searchPath)
 
-	var cmd *types.Command
-	if useSudo {
-		cmd = types.Sudo("fd", args...).PipeFn(u.filterBrokenSymlinks)
-	} else {
-		cmd = types.Cmd("fd", args...).PipeFn(u.filterBrokenSymlinks)
-	}
+	cmd := types.Cmd("fd", args...).PipeFn(u.filterBrokenSymlinks)
 
 	out := cmd.Stdout()
 	if err := cmd.Error(); err != nil {
@@ -138,32 +135,12 @@ func (u symlinks) ListInstalled() ([]string, error) {
 	}
 
 	// Collect all directories to scan
-	var dirsToScan []struct {
-		path    string
-		useSudo bool
-	}
-	dirsToScan = append(dirsToScan, struct {
-		path    string
-		useSudo bool
-	}{home, false})
-
-	var needsSudo bool
+	dirsToScan := []string{home}
 	for _, sysDir := range systemDirs {
 		if _, err := os.Stat(sysDir); os.IsNotExist(err) {
 			continue // Skip directories that don't exist
 		}
-		dirsToScan = append(dirsToScan, struct {
-			path    string
-			useSudo bool
-		}{sysDir, true})
-		needsSudo = true
-	}
-
-	// Pre-authenticate sudo once if needed, to avoid parallel sudo conflicts
-	if needsSudo {
-		if err := types.Cmd("sudo", "-v").Run().Error(); err != nil {
-			slog.Debug("Failed to pre-authenticate sudo", "error", err)
-		}
+		dirsToScan = append(dirsToScan, sysDir)
 	}
 
 	// Scan all directories in parallel
@@ -173,9 +150,9 @@ func (u symlinks) ListInstalled() ([]string, error) {
 
 	for _, dir := range dirsToScan {
 		wg.Go(func() {
-			symlinks, err := u.findBrokenSymlinks(dir.path, dir.useSudo)
+			symlinks, err := u.findBrokenSymlinks(dir)
 			if err != nil {
-				slog.Debug("Failed to check "+dir.path, "error", err)
+				slog.Debug("Failed to check "+dir, "error", err)
 				return
 			}
 			mu.Lock()
