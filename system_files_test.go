@@ -72,19 +72,12 @@ func TestListSystemDirFiles_OverwriteCollisionWarning(t *testing.T) {
 		targetPaths[targetPath] = append(targetPaths[targetPath], srcPath)
 	}
 	
-	// The collision is tracked, and last source wins
+	// The collision is tracked, and both sources are retained
 	require.Contains(t, targetPaths, "/etc/config", "Target path should exist")
-	require.Equal(t, 2, len(targetPaths["/etc/config"]),
-		"Should track both sources that target /etc/config")
-	
-	// Last directory's file should win (dir2)
-	var finalSource string
-	for src, target := range files {
-		if target == "/etc/config" {
-			finalSource = src
-		}
-	}
-	require.Contains(t, finalSource, "dir2", "Last directory should win")
+	require.ElementsMatch(t, []string{
+		filepath.Join(dir1, "etc", "config"),
+		filepath.Join(dir2, "etc", "config"),
+	}, targetPaths["/etc/config"], "Should track both sources that target /etc/config")
 }
 
 // TestHashBytes_HasPrefix tests that hashBytes includes "sha256:" prefix

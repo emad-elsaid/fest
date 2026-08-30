@@ -285,6 +285,7 @@ func (s systemConfigManager) Uninstall(configs []string) error {
 	return nil
 }
 func (s systemConfigManager) MarkExplicit(configs []string) error { return nil }
+func (s systemConfigManager) Update() error                       { return nil }
 func (s systemConfigManager) GetDependencies() (map[string][]string, error) {
 	return make(map[string][]string), nil
 }

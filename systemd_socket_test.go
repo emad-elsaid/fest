@@ -107,6 +107,7 @@ func (unwantedManager) ListExplicit() ([]string, error)  { return nil, nil }
 func (unwantedManager) Install([]string) error           { return nil }
 func (unwantedManager) Uninstall([]string) error         { return nil }
 func (unwantedManager) MarkExplicit([]string) error      { return nil }
+func (unwantedManager) Update() error                    { return nil }
 func (unwantedManager) GetDependencies() (map[string][]string, error) {
 	return nil, nil
 }

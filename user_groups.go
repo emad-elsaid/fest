@@ -154,6 +154,7 @@ func isValidUsername(username string) bool {
 }
 
 func (u userGroups) MarkExplicit([]string) error                   { return nil }
+func (u userGroups) Update() error                                 { return nil }
 func (u userGroups) GetDependencies() (map[string][]string, error) { return nil, nil }
 
 func (u userGroups) SaveAsGo(wanted []string) error {

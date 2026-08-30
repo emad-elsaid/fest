@@ -220,6 +220,41 @@ func (r rubyGems) Uninstall(gems []string) error {
 func (r rubyGems) MarkExplicit([]string) error                   { return nil }
 func (r rubyGems) GetDependencies() (map[string][]string, error) { return nil, nil }
 
+func (r rubyGems) Update() error {
+	defer rubyListCache.invalidate()
+
+	if _, err := types.Cmd("gem", "--version").StdoutErr(); err != nil {
+		slog.Warn("gem is not installed, skipping Ruby gem update")
+		return nil
+	}
+
+	var toUpdate []string
+	for _, gem := range r.Wanted() {
+		if _, ver := splitVer(gem); isVersionLocked(ver) {
+			slog.Debug("skipping version-locked Ruby gem", "gem", gem)
+			continue
+		}
+		toUpdate = append(toUpdate, gem)
+	}
+	if len(toUpdate) == 0 {
+		slog.Info("No Ruby gems to update")
+		return nil
+	}
+
+	slog.Info("Updating Ruby gems", "count", len(toUpdate))
+	for _, gem := range toUpdate {
+		name := gem
+		if idx := strings.Index(gem, "@"); idx != -1 {
+			name = gem[:idx]
+		}
+		slog.Info("Updating Ruby gem", "gem", name)
+		if err := types.Cmd("gem", "update", name).Interactive().Error(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r rubyGems) SaveAsGo(wanted []string) error {
 	installed, err := r.ListExplicit()
 	if err != nil {

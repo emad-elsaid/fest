@@ -624,6 +624,14 @@ func main() {
                     Run custom logic before/after specific resources sync. Full programmatic control.
                 </p>
             </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">⬆️</span>
+                <h3>One-Command Updates</h3>
+                <p>
+                    <code>go run . update</code> upgrades every package manager, skipping packages locked to a version.
+                </p>
+            </div>
             
             <div class="feature-card">
                 <span class="feature-icon">🤖</span>
@@ -712,7 +720,10 @@ go run . diff
 # 4. Apply your configuration
 go run . apply
 
-# 5. Commit to git and deploy anywhere
+# 5. Update installed packages (skips version-pinned ones)
+go run . update
+
+# 6. Commit to git and deploy anywhere
 git init && git add . && git commit -m "Initial system config"</code></pre>
         </div>
         

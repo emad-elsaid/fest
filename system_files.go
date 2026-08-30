@@ -298,6 +298,7 @@ func (s systemFiles) Uninstall(ops []string) error {
 	return nil
 }
 func (s systemFiles) MarkExplicit(ops []string) error { return nil }
+func (s systemFiles) Update() error                   { return nil }
 
 // UninstallPreview returns what would happen for each file to uninstall
 func (s systemFiles) UninstallPreview(ops []string) map[string]string {

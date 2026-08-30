@@ -137,6 +137,7 @@ func (s *systemdManager) Uninstall(units []string) error {
 }
 
 func (s *systemdManager) MarkExplicit([]string) error                   { return nil }
+func (s *systemdManager) Update() error                                 { return nil }
 func (s *systemdManager) GetDependencies() (map[string][]string, error) { return nil, nil }
 
 // ImplicitWanted returns service units that are already present because a

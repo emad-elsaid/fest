@@ -178,6 +178,7 @@ func (u symlinks) ListExplicit() ([]string, error) {
 
 func (u symlinks) Install([]string) error      { return nil }
 func (u symlinks) MarkExplicit([]string) error { return nil }
+func (u symlinks) Update() error               { return nil }
 
 func (u symlinks) isSystemPath(path string) bool {
 	for _, sysDir := range systemDirs {

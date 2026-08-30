@@ -25,6 +25,7 @@ A declarative system configuration management framework for Arch Linux written i
 - **Dotfile Management**: GNU Stow integration for user dotfiles
 - **Broken Symlink Cleanup**: Automatically detect and remove broken symlinks
 - **Two-Phase Execution**: Preview changes before applying (diff mode)
+- **Updates**: Upgrade installed packages while respecting version pins
 - **State Tracking**: Knows what it installed and can clean up unwanted resources
 - **Dependency Awareness**: Won't remove packages that other wanted packages depend on
 
@@ -89,6 +90,9 @@ go run . diff
 # Apply configuration
 go run . apply
 
+# Update installed packages (skipping version-pinned ones)
+go run . update
+
 # Save current system state back to Go files
 go run . save
 ```
@@ -110,6 +114,11 @@ go run . save
 - **`save`**: Capture current system state as Go code
   - Generates `.go` files with function calls that match your system
   - Useful after manual installations to capture them declaratively
+
+- **`update`**: Upgrade installed packages to newer versions
+  - Updates each package manager's declared packages
+  - Skips packages locked to a specific version (e.g. `eslint@8.50.0`)
+  - Runs a full system upgrade for pacman (nothing is version-locked)
 
 ### Package Management
 
@@ -279,6 +288,7 @@ type packageManager interface {
     Uninstall(pkgs []string) error
     MarkExplicit(pkgs []string) error
     GetDependencies() (map[string][]string, error)
+    Update() error
     SaveAsGo(wanted []string) error
 }
 ```
@@ -394,7 +404,7 @@ If you're migrating from the original Ruby implementation:
 1. The API is very similar but uses Go syntax instead of Ruby
 2. Replace `require` statements with `import`
 3. Replace `do` blocks with `func init()` functions
-4. The command structure is the same (`apply`, `save`, `diff`)
+4. The command structure is the same (`apply`, `save`, `diff`, `update`)
 
 ## License
 

@@ -160,6 +160,7 @@ func (m *mockPackageManagerWithFailingRefresh) Uninstall(pkgs []string) error { 
 func (m *mockPackageManagerWithFailingRefresh) MarkExplicit(pkgs []string) error {
 	return nil
 }
+func (m *mockPackageManagerWithFailingRefresh) Update() error { return nil }
 func (m *mockPackageManagerWithFailingRefresh) GetDependencies() (map[string][]string, error) {
 	return nil, nil
 }

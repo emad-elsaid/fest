@@ -44,6 +44,11 @@ type packageManager interface {
 	// Returns nil if dependency tracking is not supported.
 	GetDependencies() (map[string][]string, error)
 
+	// Update upgrades the manager's resources to their latest versions,
+	// skipping any that are locked to a specific version. Managers without
+	// updateable resources return nil.
+	Update() error
+
 	// SaveAsGo generates Go code that declares the given resources.
 	// This is used during the "save" command to persist system state.
 	SaveAsGo(wanted []string) error
@@ -98,6 +103,8 @@ const (
 	PhaseAfterSave   CommandPhase = "after-save"
 	PhaseBeforeApply CommandPhase = "before-apply"
 	PhaseAfterApply  CommandPhase = "after-apply"
+	PhaseBeforeUpdate CommandPhase = "before-update"
+	PhaseAfterUpdate  CommandPhase = "after-update"
 )
 
 // commandCallbacks stores callbacks for command lifecycle phases.

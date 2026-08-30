@@ -157,6 +157,14 @@ func matchWithVersion(want, have string, splitFn func(string) (string, string)) 
 	return wantVer == "" || wantVer == "latest" || haveVer == "" || haveVer == "latest" || wantVer == haveVer
 }
 
+// isVersionLocked returns true when a version is an explicit pin or constraint
+// rather than empty or "latest". Locked resources must not be updated by the
+// update command so a declared version stays in effect.
+func isVersionLocked(ver string) bool {
+	ver = strings.TrimSpace(ver)
+	return ver != "" && ver != "latest"
+}
+
 // saveAsGoFile generates a Go source file that calls the given function with the provided items.
 // This is used during the "save" operation to persist system state as declarative Go code.
 func saveAsGoFile(filename, funcName string, items []string) error {

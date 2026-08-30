@@ -16,6 +16,7 @@ import (
 //   - apply: Synchronize system state with declared configuration
 //   - save: Save current system state as declarative Go code
 //   - diff: Show what would change without making actual changes
+//   - update: Upgrade installed packages, skipping version-locked ones
 //
 // This function should be called from your main package after declaring your desired configuration.
 func Main() {
@@ -54,6 +55,8 @@ func Main() {
 		cmdSave(stowDir)
 	case "diff":
 		cmdDiff()
+	case "update":
+		cmdUpdate()
 	default:
 		slog.Error("Unknown command", "command", command)
 		fmt.Println()
@@ -76,6 +79,9 @@ Commands:
 
     diff        Dry-run simulation showing what would change
                 without making any actual changes
+
+    update      Upgrade installed packages, skipping packages that
+                are locked to a specific version
 
     help        Show this help message
 
@@ -143,6 +149,25 @@ func cmdDiff() {
 
 	executeCommandCallbacks(PhaseAfterDiff)
 	logSuccess("diff complete")
+}
+
+// cmdUpdate upgrades installed resources to newer versions, skipping any that
+// are locked to a specific version.
+func cmdUpdate() {
+	executeCommandCallbacks(PhaseBeforeUpdate)
+
+	for _, mgr := range allManagers() {
+		executeCallbacks(mgr.ResourceName(), callbacks.before, "before")
+
+		if err := mgr.Update(); err != nil {
+			checkWarn(err, "Failed to update "+mgr.ResourceName())
+		}
+
+		executeCallbacks(mgr.ResourceName(), callbacks.after, "after")
+	}
+
+	executeCommandCallbacks(PhaseAfterUpdate)
+	logSuccess("update complete")
 }
 
 // cmdSave saves the current system state as declarative Go code.

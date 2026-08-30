@@ -98,6 +98,20 @@ func (f flatpak) MarkExplicit([]string) error {
 	return nil
 }
 
+func (f flatpak) Update() error {
+	if _, err := types.Cmd("flatpak", "--version").StdoutErr(); err != nil {
+		slog.Warn("flatpak is not installed, skipping flatpak update")
+		return nil
+	}
+
+	// Flatpak apps are never version-locked, so every installed app is updated.
+	slog.Info("Updating flatpak apps")
+	if err := types.Cmd("flatpak", "update", "-y").Interactive().Error(); err != nil {
+		return fmt.Errorf("failed to update flatpak apps: %w", err)
+	}
+	return nil
+}
+
 func (f flatpak) GetDependencies() (map[string][]string, error) {
 	// Flatpak manages dependencies internally, no need to track them
 	return nil, nil

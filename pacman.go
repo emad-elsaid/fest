@@ -98,6 +98,13 @@ func (p pacman) MarkExplicit(pkgs []string) error {
 	return types.Sudo("pacman", append([]string{"-D", "--asexplicit"}, pkgs...)...).Interactive().Error()
 }
 
+func (p pacman) Update() error {
+	// Pacman packages are never version-locked in the declaration, so a full
+	// system upgrade refreshes the databases and updates every installed package.
+	slog.Info("Updating system packages")
+	return types.Sudo("pacman", "-Syu").Interactive().Error()
+}
+
 func (p pacman) GetDependencies() (map[string][]string, error) {
 	stdout, err := types.Cmd("expac", "-Q", "%n|%D|%S").StdoutErr()
 	if err != nil {

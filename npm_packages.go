@@ -142,6 +142,41 @@ func (n npmPackages) Uninstall(pkgs []string) error {
 func (n npmPackages) MarkExplicit([]string) error                   { return nil }
 func (n npmPackages) GetDependencies() (map[string][]string, error) { return nil, nil }
 
+func (n npmPackages) Update() error {
+	defer npmListCache.invalidate()
+
+	if _, err := types.Cmd("npm", "--version").StdoutErr(); err != nil {
+		slog.Warn("npm is not installed, skipping npm package update")
+		return nil
+	}
+
+	var toUpdate []string
+	for _, pkg := range n.Wanted() {
+		if _, ver := splitNpmVer(pkg); isVersionLocked(ver) {
+			slog.Debug("skipping version-locked npm package", "package", pkg)
+			continue
+		}
+		toUpdate = append(toUpdate, pkg)
+	}
+	if len(toUpdate) == 0 {
+		slog.Info("No npm packages to update")
+		return nil
+	}
+
+	slog.Info("Updating npm packages", "count", len(toUpdate))
+	for _, pkg := range toUpdate {
+		installPkg := pkg
+		if _, ver := splitNpmVer(pkg); ver == "" {
+			installPkg = pkg + "@latest"
+		}
+		slog.Info("Updating npm package", "package", installPkg)
+		if err := types.Cmd("npm", "install", "-g", installPkg).Interactive().Error(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (n npmPackages) SaveAsGo(wanted []string) error {
 	installed, err := n.ListExplicit()
 	if err != nil {

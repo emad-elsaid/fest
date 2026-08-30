@@ -203,6 +203,41 @@ func (g goPackages) Uninstall(pkgs []string) error {
 func (g goPackages) MarkExplicit([]string) error                   { return nil }
 func (g goPackages) GetDependencies() (map[string][]string, error) { return nil, nil }
 
+func (g goPackages) Update() error {
+	defer goListCache.invalidate()
+
+	if _, err := types.Cmd("go", "version").StdoutErr(); err != nil {
+		slog.Warn("go is not installed, skipping Go package update")
+		return nil
+	}
+
+	var toUpdate []string
+	for _, pkg := range g.Wanted() {
+		if _, ver := splitVer(pkg); isVersionLocked(ver) {
+			slog.Debug("skipping version-locked Go package", "package", pkg)
+			continue
+		}
+		toUpdate = append(toUpdate, pkg)
+	}
+	if len(toUpdate) == 0 {
+		slog.Info("No Go packages to update")
+		return nil
+	}
+
+	slog.Info("Updating Go packages", "count", len(toUpdate))
+	for _, pkg := range toUpdate {
+		installPkg := pkg
+		if !strings.Contains(pkg, "@") {
+			installPkg = pkg + "@latest"
+		}
+		slog.Info("Updating Go package", "package", installPkg)
+		if err := types.Cmd("go", "install", installPkg).Interactive().Error(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (g goPackages) SaveAsGo(wanted []string) error {
 	installed, err := g.ListExplicit()
 	if err != nil {
