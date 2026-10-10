@@ -124,6 +124,26 @@ func (s systemFiles) ListInstalled() ([]string, error) {
 	if err != nil {
 		return installed, err
 	}
+
+	// Files we deployed whose source was since deleted from the system dirs
+	// can't be seen by the walk above. Read them back from state so they're
+	// reported as installed and offered for uninstall, instead of being
+	// orphaned on the system forever.
+	if state, stateErr := loadState(); stateErr == nil {
+		current := make(map[string]struct{}, len(dirFiles))
+		for _, targetPath := range dirFiles {
+			current[targetPath] = struct{}{}
+		}
+		for targetPath := range state.Files {
+			if _, ok := current[targetPath]; ok {
+				continue
+			}
+			if _, statErr := os.Stat(targetPath); statErr == nil {
+				installed = append(installed, targetPath)
+			}
+		}
+	}
+
 	for srcPath, targetPath := range dirFiles {
 		// Read source file content
 		srcContent, err := os.ReadFile(srcPath)

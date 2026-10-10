@@ -149,6 +149,32 @@ func TestListSystemDirFiles_NonexistentDir(t *testing.T) {
 	require.NotNil(t, files, "Files map should not be nil even on error")
 }
 
+// TestListInstalled_IncludesOrphansInState tests that a file whose source was
+// deleted from the system dirs is still reported as installed (from state), so
+// apply offers to remove it instead of leaving it behind forever.
+func TestListInstalled_IncludesOrphansInState(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	target := filepath.Join(home, "etc", "sddm.conf.d", "retro.conf")
+	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0755))
+	require.NoError(t, os.WriteFile(target, []byte("old"), 0644))
+
+	require.NoError(t, saveState(&systemFilesState{Version: 1, Files: map[string]fileState{
+		target: {InstalledHash: hashBytes([]byte("old"))},
+	}}))
+
+	original := systemFilesDirs
+	defer func() { systemFilesDirs = original }()
+	emptySource := filepath.Join(home, "system")
+	require.NoError(t, os.MkdirAll(emptySource, 0755))
+	systemFilesDirs = []string{emptySource}
+
+	installed, err := systemFiles{}.ListInstalled()
+	require.NoError(t, err)
+	require.Contains(t, installed, target, "orphaned tracked file should be reported installed")
+}
+
 // TestReadFileWithSudo_RegularFile tests normal file reading without sudo
 func TestReadFileWithSudo_RegularFile(t *testing.T) {
 	tmpDir := t.TempDir()
