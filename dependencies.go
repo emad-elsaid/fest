@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os/exec"
 	"strings"
 
 	"github.com/emad-elsaid/fest/yay"
@@ -116,7 +117,8 @@ func isInstalled(dep dependency) bool {
 		}
 		return types.Cmd(dep.CheckCmd[0], dep.CheckCmd[1:]...).Error() == nil
 	}
-	return types.Cmd("which", dep.Name).Error() == nil
+	_, err := exec.LookPath(dep.Name)
+	return err == nil
 }
 
 // depNames extracts the names from a slice of dependencies.

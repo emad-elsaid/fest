@@ -53,8 +53,10 @@ func validateTimezone(timezone string) error {
 	if strings.Contains(timezone, "..") {
 		return fmt.Errorf("invalid timezone (path traversal): %s", timezone)
 	}
-	// Validate format: should be like America/New_York
-	pattern := regexp.MustCompile(`^[A-Za-z_]+(/[A-Za-z_]+)?$`)
+	// Validate format: IANA zones are one or more "/"-separated components that
+	// may contain letters, digits, "_", "-" and "+" (e.g. America/New_York,
+	// America/Argentina/Buenos_Aires, America/Port-au-Prince, Etc/GMT+5).
+	pattern := regexp.MustCompile(`^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$`)
 	if !pattern.MatchString(timezone) {
 		return fmt.Errorf("invalid timezone format: %s", timezone)
 	}

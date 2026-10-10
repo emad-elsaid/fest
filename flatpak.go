@@ -24,7 +24,15 @@ var wantedFlatpak []string
 //	    "com.github.tchx84.Flatseal",
 //	    "org.mozilla.firefox",
 //	)
-func Flatpak(apps ...string) { addUnique(&wantedFlatpak, apps...) }
+func Flatpak(apps ...string) {
+	var valid []string
+	for _, app := range apps {
+		if strings.TrimSpace(app) != "" {
+			valid = append(valid, app)
+		}
+	}
+	addUnique(&wantedFlatpak, valid...)
+}
 
 type flatpak struct{}
 
@@ -55,7 +63,7 @@ func (f flatpak) ListInstalled() ([]string, error) {
 			apps = append(apps, app)
 		}
 	}
-	return apps, nil
+	return lo.Uniq(apps), nil
 }
 
 func (f flatpak) ListExplicit() ([]string, error) {

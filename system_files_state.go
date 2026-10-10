@@ -6,7 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"time"
 )
@@ -27,7 +29,14 @@ type systemFilesState struct {
 }
 
 func stateDir() string {
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		// Fall back to the account's home directory so the state path stays
+		// absolute even when $HOME is unavailable.
+		if u, uerr := user.Current(); uerr == nil {
+			home = u.HomeDir
+		}
+	}
 	return filepath.Join(home, ".local", "share", "dotfiles")
 }
 
@@ -50,7 +59,7 @@ func loadState() (*systemFilesState, error) {
 
 	var state systemFilesState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return &systemFilesState{Version: 1, Files: make(map[string]fileState)}, nil
+		return nil, fmt.Errorf("failed to parse state file %s: %w", statePath(), err)
 	}
 	if state.Files == nil {
 		state.Files = make(map[string]fileState)

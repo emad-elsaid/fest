@@ -127,12 +127,12 @@ func (u userStow) handleConflicts(dotfilesDir, stowDir, targetDir string) error 
 }
 
 func (u userStow) parseApplyConflicts(output string) []string {
-	re := regexp.MustCompile(`cannot stow (?s:.+) over existing target ((?s:.+)) since`)
+	re := regexp.MustCompile(`cannot stow [^\n]+ over existing target ([^\n]+) since`)
 	return lo.Map(re.FindAllStringSubmatch(output, -1), func(m []string, _ int) string { return m[1] })
 }
 
 func (u userStow) parseConflicts(output string) []string {
-	re := regexp.MustCompile(`existing target is not owned by stow: ((?s:.+))`)
+	re := regexp.MustCompile(`existing target is not owned by stow: ([^\n]+)`)
 	return lo.Map(re.FindAllStringSubmatch(output, -1), func(m []string, _ int) string { return m[1] })
 }
 

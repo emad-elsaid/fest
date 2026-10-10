@@ -67,12 +67,12 @@ func TestMatchPessimistic_BoundaryCheck(t *testing.T) {
 			have: "gem@1.2.9",
 			exp:  true,
 		},
-	{
-		name: "minor constraint accepts minor bump within major",
-		want: "gem@~>1.2",
-		have: "gem@1.3.0",
-		exp:  true, // ~>1.2 means >= 1.2, < 2.0
-	},
+		{
+			name: "minor constraint accepts minor bump within major",
+			want: "gem@~>1.2",
+			have: "gem@1.3.0",
+			exp:  true, // ~>1.2 means >= 1.2, < 2.0
+		},
 		{
 			name: "patch constraint allows patch bumps",
 			want: "gem@~>1.2.3",
@@ -215,4 +215,29 @@ func TestCompareVer_EdgeCases(t *testing.T) {
 				"compareVer(%q, %q) = %v, want %v", tc.v1, tc.v2, result, tc.exp)
 		})
 	}
+}
+
+// RubyGemsBugNativePlatformMatch verifies that a wanted gem still matches the
+// installed entry for a native (non-ruby) gem.
+//
+// listGemsRuby deliberately prints "name@version platform" for native gems
+// (e.g. "nokogiri@1.15.4 x86_64-linux"), and that whole line is handed to Match
+// as the "have" value. Match never strips the platform suffix, so the version
+// it compares is "1.15.4 x86_64-linux" instead of "1.15.4". A pinned native gem
+// therefore never matches, and compareVer's string fallback (go-version rejects
+// the malformed version) makes min-version constraints wrong too.
+func TestRubyGemsBugNativePlatformMatch(t *testing.T) {
+	r := rubyGems{}
+
+	t.Run("exact pin matches installed native gem", func(t *testing.T) {
+		require.True(t,
+			r.Match("nokogiri@1.15.4", "nokogiri@1.15.4 x86_64-linux"),
+			"a pinned native gem must match its installed entry, platform suffix included")
+	})
+
+	t.Run("minimum constraint matches newer native gem", func(t *testing.T) {
+		require.True(t,
+			r.Match("nokogiri@>=1.9", "nokogiri@1.10.0 x86_64-linux"),
+			">=1.9 must be satisfied by an installed 1.10.0 native build")
+	})
 }

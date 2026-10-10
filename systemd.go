@@ -100,7 +100,16 @@ func (s *systemdManager) ListInstalled() ([]string, error) {
 
 func (s *systemdManager) ListExplicit() ([]string, error) { return s.ListInstalled() }
 
+// invalidate clears the memoized installed list after a mutation so subsequent
+// reads reflect the change.
+func (s *systemdManager) invalidate() {
+	s.cachedInstalled = nil
+	s.cached = false
+}
+
 func (s *systemdManager) Install(units []string) error {
+	defer s.invalidate()
+
 	var args []string
 	if s.user {
 		args = append(args, "--user")
@@ -119,6 +128,8 @@ func (s *systemdManager) Install(units []string) error {
 }
 
 func (s *systemdManager) Uninstall(units []string) error {
+	defer s.invalidate()
+
 	var args []string
 	if s.user {
 		args = append(args, "--user")

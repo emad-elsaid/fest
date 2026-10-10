@@ -26,10 +26,10 @@ func TestUserStow_ParseApplyConflicts_SpecialCharacters(t *testing.T) {
 			expected: []string{"/home/user/.config/app (x86)/.conf"},
 		},
 		{
-			name: "file path with embedded newline",
-			// Fixed: (?s:.+) matches newlines
+			name: "embedded newline is not part of a path",
+			// Paths are single-line; a newline begins a new stow record.
 			output:   "cannot stow something over existing target /home/user/.file\nwith\nnewline since target exists",
-			expected: []string{"/home/user/.file\nwith\nnewline"}, // Fixed: now gets full path
+			expected: []string{},
 		},
 	}
 
@@ -66,7 +66,7 @@ func TestUserStow_GetDirs_SymlinkWorkingDir(t *testing.T) {
 
 	// Fixed: os.Getenv("PWD") preserves symlinks
 	require.Equal(t, symlinkPath, dotfilesDir, "getDirs should preserve symlink path")
-	
+
 	expectedStow := filepath.Join(symlinkPath, "user")
 	require.Equal(t, expectedStow, stowDir, "stowDir should be relative to unresolved path")
 }
@@ -98,17 +98,16 @@ func TestUserStow_ParseApplyConflicts_TruncatedOutput(t *testing.T) {
 	}
 }
 
-// Fixed: parseConflicts now handles newlines in paths
-func TestUserStow_ParseConflicts_NewlineInPath(t *testing.T) {
-	// Fixed: (?s:.+) matches newlines
+// parseConflicts captures a single path per conflict line; trailing text after
+// the newline is not part of the path.
+func TestUserStow_ParseConflicts_StopsAtNewline(t *testing.T) {
 	output := "existing target is not owned by stow: /home/user/.file\nwith\nnewline"
-	
+
 	u := newUserStow()
 	result := u.parseConflicts(output)
-	
-	// Fixed: full path is captured including newlines
-	expected := []string{"/home/user/.file\nwith\nnewline"}
-	require.Equal(t, expected, result, "Path should include newlines")
+
+	expected := []string{"/home/user/.file"}
+	require.Equal(t, expected, result, "Path should stop at the newline")
 }
 
 // Bug 5: showDiff uses os.Stat which follows symlinks
@@ -127,7 +126,7 @@ func TestUserStow_ShowDiff_FollowsSymlinks(t *testing.T) {
 	// Target is a symlink to another file
 	actualTarget := filepath.Join(tmpDir, "other.txt")
 	require.NoError(t, os.WriteFile(actualTarget, []byte("other content"), 0644))
-	
+
 	targetFile := filepath.Join(targetDir, "config.txt")
 	require.NoError(t, os.Symlink(actualTarget, targetFile))
 
@@ -150,7 +149,7 @@ func TestUserStow_ShowDiff_FollowsSymlinks(t *testing.T) {
 func TestUserStow_ParseApplyConflicts_MissingCaptureGroup(t *testing.T) {
 	// While the regex pattern has a capture group (.+), if stow changes its output
 	// format, we could match the outer pattern but not have a valid capture
-	
+
 	// This test demonstrates the fragility - any change to stow output breaks silently
 	tests := []struct {
 		name   string
@@ -170,11 +169,57 @@ func TestUserStow_ParseApplyConflicts_MissingCaptureGroup(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			u := newUserStow()
 			conflicts := u.parseApplyConflicts(tc.output)
-			
+
 			// Bug: returns empty for unrecognized format
 			// Apply() proceeds without conflict resolution, using --override=.*
 			// which might overwrite user files unexpectedly
 			require.Empty(t, conflicts, "Unrecognized format returns empty, no error raised")
 		})
 	}
+}
+
+// Real stow output for `stow --adopt --simulate -d <dotfiles> -t <home> user`
+// when targets are not owned by stow (see /usr/bin/stow: "All operations aborted.").
+//
+// parseConflicts must extract one path per conflict line. The current greedy
+// `(?s:.+)` capture runs past the end of the line and swallows the trailing
+// summary text (and any following conflict lines).
+func TestUserStowBugParseConflictsSingleLine(t *testing.T) {
+	u := newUserStow()
+
+	output := "WARNING! stowing user would cause conflicts:\n" +
+		"  * existing target is not owned by stow: .bashrc\n" +
+		"All operations aborted.\n"
+
+	got := u.parseConflicts(output)
+	require.Equal(t, []string{".bashrc"}, got)
+}
+
+func TestUserStowBugParseConflictsMultipleLines(t *testing.T) {
+	u := newUserStow()
+
+	output := "WARNING! stowing user would cause conflicts:\n" +
+		"  * existing target is not owned by stow: .bashrc\n" +
+		"  * existing target is not owned by stow: .vimrc\n" +
+		"All operations aborted.\n"
+
+	got := u.parseConflicts(output)
+	require.Equal(t, []string{".bashrc", ".vimrc"}, got)
+}
+
+// Real stow output for `stow --simulate -d <dotfiles> -t <home> user` when a
+// target exists and is neither a link nor a directory.
+//
+// The greedy first `(?s:.+)` makes the regex skip every conflict but the last:
+// it consumes up to the final " over existing target " in the whole output.
+func TestUserStowBugParseApplyConflictsMultipleLines(t *testing.T) {
+	u := newUserStow()
+
+	output := "WARNING! stowing user would cause conflicts:\n" +
+		"  * cannot stow user/.bashrc over existing target .bashrc since neither a link nor a directory and --adopt not specified\n" +
+		"  * cannot stow user/.vimrc over existing target .vimrc since neither a link nor a directory and --adopt not specified\n" +
+		"All operations aborted.\n"
+
+	got := u.parseApplyConflicts(output)
+	require.Equal(t, []string{".bashrc", ".vimrc"}, got)
 }

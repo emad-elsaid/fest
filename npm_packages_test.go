@@ -17,7 +17,7 @@ func TestNpmPackage_EmptyStrings(t *testing.T) {
 	defer func() { wantedNpmPackages = original }()
 	wantedNpmPackages = []string{}
 
-	// FIXED: NpmPackage now validates input at lines 28-35
+	// FIXED: NpmPackage now validates input
 	// Only non-empty, non-whitespace strings are added
 	NpmPackage("", "  ", "\t", "\n", "valid-package")
 
@@ -60,14 +60,14 @@ func TestInstall_EmptyPackageValidation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: Install() validates at lines 98-100
+			// FIXED: Install() validates input
 			if strings.TrimSpace(tc.pkg) == "" {
 				// This should return an error
 				require.True(t, tc.shouldError,
 					"Empty/whitespace package should be rejected")
 				return
 			}
-			
+
 			require.False(t, tc.shouldError,
 				"Valid package should be accepted")
 		})
@@ -103,14 +103,14 @@ func TestUninstall_EmptyPackageValidation(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: Uninstall() validates at lines 122-124
+			// FIXED: Uninstall() validates input
 			if strings.TrimSpace(tc.pkg) == "" {
 				// This should return an error
 				require.True(t, tc.shouldError,
 					"Empty/whitespace package should be rejected")
 				return
 			}
-			
+
 			// Valid packages proceed normally
 			pkgName, _ := splitNpmVer(tc.pkg)
 			require.NotEmpty(t, pkgName, "Valid package should have name")
@@ -126,7 +126,7 @@ func TestUninstall_EmptyPackageValidation(t *testing.T) {
 func TestMatch_VersionWhitespaceNotTrimmed(t *testing.T) {
 	npm := npmPackages{}
 
-	// FIXED: Match() at line 50 does NOT trim whitespace
+	// FIXED: Match() does NOT trim whitespace
 	// This ensures malformed versions like " 5.0.0" are NOT matched
 	want := "typescript@ 5.0.0" // Note: space after @
 	have := "typescript@5.0.0"
@@ -134,17 +134,17 @@ func TestMatch_VersionWhitespaceNotTrimmed(t *testing.T) {
 	// splitNpmVer("typescript@ 5.0.0") returns ("typescript", " 5.0.0")
 	// Match() no longer trims, so " 5.0.0" != "5.0.0"
 	result := npm.Match(want, have)
-	
+
 	require.False(t, result,
 		"Malformed version ' 5.0.0' should NOT match '5.0.0' (whitespace preserved)")
-	
+
 	// Verify exact match still works
 	exactMatch := npm.Match("typescript@5.0.0", "typescript@5.0.0")
 	require.True(t, exactMatch, "Exact versions should match")
 }
 
 // ============================================================
-// Test 5: Match() handles nested scoped packages  
+// Test 5: Match() handles nested scoped packages
 // ============================================================
 
 func TestMatch_NestedScopedPackages(t *testing.T) {
@@ -181,7 +181,7 @@ func TestMatch_NestedScopedPackages(t *testing.T) {
 			result := npm.Match(tc.want, tc.have)
 			require.Equal(t, tc.match, result,
 				"Match(%q, %q) = %v, want %v", tc.want, tc.have, result, tc.match)
-			
+
 			// Verify splitNpmVer correctly parses scoped packages
 			if strings.HasPrefix(tc.want, "@") {
 				name, ver := splitNpmVer(tc.want)
@@ -193,4 +193,29 @@ func TestMatch_NestedScopedPackages(t *testing.T) {
 			}
 		})
 	}
+}
+
+// NpmPackage validates each argument with strings.TrimSpace but then appends the
+// *raw* string, so a name with surrounding whitespace is stored verbatim. The
+// stored value is later passed to `npm install -g` (which rejects it) and to
+// Match (which cannot match the installed package), so the declaration never
+// becomes installed.
+//
+// Correct behaviour: the value that passed the TrimSpace check is the trimmed
+// name, so that is what must be stored.
+func TestNpmBugDeclareTrimsSurroundingWhitespace(t *testing.T) {
+	orig := wantedNpmPackages
+	t.Cleanup(func() { wantedNpmPackages = orig })
+	wantedNpmPackages = nil
+
+	NpmPackage(" eslint ", "@vue/cli\t")
+
+	require.Equal(t, []string{"eslint", "@vue/cli"}, wantedNpmPackages,
+		"NpmPackage must store the trimmed package name it validated with TrimSpace")
+
+	// Consequence of the bug: a declared package must be recognised against the
+	// installed list. With the raw " eslint " it is not, so apply reinstalls
+	// forever and `npm install -g " eslint @latest"` fails.
+	require.True(t, npmPackages{}.Match(wantedNpmPackages[0], "eslint@8.50.0"),
+		"declared %q must match installed eslint@8.50.0", wantedNpmPackages[0])
 }

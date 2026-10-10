@@ -79,8 +79,9 @@ func (u symlinks) filterBrokenSymlinks(stdin string) (stdout, stderr string, err
 			continue
 		}
 
-		// Check if symlink target exists (broken = target doesn't exist)
-		if _, statErr := os.Stat(link); os.IsNotExist(statErr) {
+		// A symlink is broken when its target cannot be resolved, for any reason
+		// (ENOENT, ELOOP, ENOTDIR, EACCES, ...).
+		if _, statErr := os.Stat(link); statErr != nil {
 			broken = append(broken, link)
 		}
 	}

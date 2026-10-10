@@ -61,7 +61,7 @@ func (c *listCache) invalidate() {
 
 // addUnique appends items to target slice, skipping duplicates already present in the slice.
 func addUnique(target *[]string, items ...string) {
-	*target = append(*target, lo.Without(items, *target...)...)
+	*target = lo.Uniq(append(*target, items...))
 }
 
 // askYesNo prompts the user with a yes/no question and returns the boolean result.

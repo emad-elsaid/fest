@@ -21,6 +21,16 @@ import (
 // This function should be called from your main package after declaring your desired configuration.
 func Main() {
 	slog.SetDefault(slog.New(newPrettyHandler(os.Stdout)))
+
+	// Handle help before flag parsing: flag.Parse would otherwise consume
+	// --help/-h and print the flag package's stub banner instead of our usage.
+	for _, arg := range os.Args[1:] {
+		if arg == "help" || arg == "--help" || arg == "-h" || arg == "-help" {
+			usage()
+			return
+		}
+	}
+
 	flag.Parse()
 	args := flag.Args()
 	if len(args) == 0 {
@@ -29,12 +39,6 @@ func Main() {
 	}
 
 	command := args[0]
-
-	// Check for help before dependency check to allow --help without dependencies
-	if command == "help" || command == "--help" || command == "-h" {
-		usage()
-		return
-	}
 
 	// Warn about extra arguments
 	if len(args) > 1 {
@@ -115,7 +119,7 @@ func allManagers() []packageManager {
 
 	return []packageManager{
 		systemConfigManager{},
-		pacman{},
+		&pacman{},
 		flatpak{},
 		npmPackages{},
 		goPackages{},

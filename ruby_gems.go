@@ -58,6 +58,11 @@ func (r rubyGems) Match(want, have string) bool {
 	}
 	wantVer = strings.TrimSpace(wantVer)
 	haveVer = strings.TrimSpace(haveVer)
+	// Native gems are listed as "version platform" (e.g. "1.15.4 x86_64-linux");
+	// the platform is not part of the version.
+	if fields := strings.Fields(haveVer); len(fields) > 1 {
+		haveVer = fields[0]
+	}
 	// Match is symmetric for empty/latest versions
 	if wantVer == "" || wantVer == "latest" || haveVer == "" || haveVer == "latest" {
 		return true

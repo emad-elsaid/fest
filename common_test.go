@@ -1,6 +1,10 @@
 package fest
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestIsVersionLocked(t *testing.T) {
 	tests := []struct {
@@ -27,4 +31,19 @@ func TestIsVersionLocked(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCommonBugAddUniqueDuplicateItemsWithinOneCall documents that addUnique
+// must not append the same item twice when it is passed more than once in a
+// single call (e.g. fest.Package("vim", "vim")).
+func TestCommonBugAddUniqueDuplicateItemsWithinOneCall(t *testing.T) {
+	var s []string
+	addUnique(&s, "a", "a")
+	require.Equal(t, []string{"a"}, s)
+}
+
+func TestCommonBugAddUniqueDuplicateItemsWithExisting(t *testing.T) {
+	s := []string{"b"}
+	addUnique(&s, "a", "b", "a")
+	require.Equal(t, []string{"b", "a"}, s)
 }

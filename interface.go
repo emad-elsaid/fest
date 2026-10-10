@@ -97,12 +97,12 @@ type CommandPhase string
 
 // Available command lifecycle phases.
 const (
-	PhaseBeforeDiff  CommandPhase = "before-diff"
-	PhaseAfterDiff   CommandPhase = "after-diff"
-	PhaseBeforeSave  CommandPhase = "before-save"
-	PhaseAfterSave   CommandPhase = "after-save"
-	PhaseBeforeApply CommandPhase = "before-apply"
-	PhaseAfterApply  CommandPhase = "after-apply"
+	PhaseBeforeDiff   CommandPhase = "before-diff"
+	PhaseAfterDiff    CommandPhase = "after-diff"
+	PhaseBeforeSave   CommandPhase = "before-save"
+	PhaseAfterSave    CommandPhase = "after-save"
+	PhaseBeforeApply  CommandPhase = "before-apply"
+	PhaseAfterApply   CommandPhase = "after-apply"
 	PhaseBeforeUpdate CommandPhase = "before-update"
 	PhaseAfterUpdate  CommandPhase = "after-update"
 )
@@ -149,7 +149,9 @@ func executeCommandCallbacks(phase CommandPhase) {
 
 // executeCallbacks runs all callbacks for a given resource and callback type.
 func executeCallbacks(resourceName string, callbackMap map[string][]Callback, when string) error {
+	callbacks.RLock()
 	cbs := callbackMap[resourceName]
+	callbacks.RUnlock()
 	if len(cbs) == 0 {
 		return nil
 	}

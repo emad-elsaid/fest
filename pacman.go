@@ -75,14 +75,16 @@ func (p pacman) ListExplicit() ([]string, error) {
 	return strings.Fields(stdout), nil
 }
 
-func (p pacman) Install(pkgs []string) error {
-	// Initialize yay client if not already done
+func (p *pacman) Install(pkgs []string) error {
+	// Initialize the yay client once and reuse it for the lifetime of the
+	// manager, so repeated installs don't rebuild the alpm executor each time.
+	// ponytail: client is never closed; the interface has no teardown hook, so it
+	// is released on process exit. Add a Close hook if that lifetime must shrink.
 	if p.yayClient == nil {
 		client, err := yay.NewClient("needed", "noconfirm")
 		if err != nil {
 			return fmt.Errorf("failed to initialize yay: %w", err)
 		}
-		defer client.Close()
 		p.yayClient = client
 	}
 

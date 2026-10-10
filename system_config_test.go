@@ -2,6 +2,8 @@ package fest
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -68,10 +70,10 @@ func TestLocale_CommandInjectionPrevented(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: validateLocale() now exists at lines 34-44
+			// FIXED: validateLocale() now exists
 			// Pattern: ^[a-zA-Z_]+\.[A-Z0-9-]+(@[a-z]+)?( [A-Z0-9-]+)?$
 			err := validateLocale(tc.locale)
-			
+
 			if tc.shouldBeValid {
 				require.NoError(t, err,
 					"Valid locale %q should pass validation (%s)", tc.locale, tc.reason)
@@ -81,8 +83,8 @@ func TestLocale_CommandInjectionPrevented(t *testing.T) {
 			}
 		})
 	}
-	
-	// FIXED: Install() now uses | as sed delimiter (line 226)
+
+	// FIXED: Install() now uses | as sed delimiter
 	// This prevents issues with / in locale strings
 	locale := "en_US.UTF-8"
 	sedPattern := fmt.Sprintf("s|^#%s|%s|", locale, locale)
@@ -93,54 +95,54 @@ func TestLocale_CommandInjectionPrevented(t *testing.T) {
 // TestTimedate_TimezoneValidation verifies timezone validation is implemented
 func TestTimedate_TimezoneValidation(t *testing.T) {
 	tests := []struct {
-		name        string
-		timezone    string
+		name          string
+		timezone      string
 		shouldBeValid bool
-		reason      string
+		reason        string
 	}{
 		{
-			name:        "valid timezone",
-			timezone:    "America/New_York",
+			name:          "valid timezone",
+			timezone:      "America/New_York",
 			shouldBeValid: true,
-			reason:      "standard timezone format",
+			reason:        "standard timezone format",
 		},
 		{
-			name:        "empty timezone rejected",
-			timezone:    "",
+			name:          "empty timezone rejected",
+			timezone:      "",
 			shouldBeValid: false,
-			reason:      "empty string should be rejected",
+			reason:        "empty string should be rejected",
 		},
 		{
-			name:        "path traversal blocked",
-			timezone:    "../../../etc/passwd",
+			name:          "path traversal blocked",
+			timezone:      "../../../etc/passwd",
 			shouldBeValid: false,
-			reason:      "path traversal should be rejected",
+			reason:        "path traversal should be rejected",
 		},
 		{
-			name:        "special characters blocked",
-			timezone:    "America/New_York; rm -rf /",
+			name:          "special characters blocked",
+			timezone:      "America/New_York; rm -rf /",
 			shouldBeValid: false,
-			reason:      "shell metacharacters should be rejected",
+			reason:        "shell metacharacters should be rejected",
 		},
 		{
-			name:        "nonexistent timezone rejected",
-			timezone:    "NotARealTimezone",
+			name:          "nonexistent timezone rejected",
+			timezone:      "NotARealTimezone",
 			shouldBeValid: false,
-			reason:      "should validate against /usr/share/zoneinfo/",
+			reason:        "should validate against /usr/share/zoneinfo/",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: validateTimezone() now exists at lines 48-66
+			// FIXED: validateTimezone() now exists
 			// Checks:
 			// 1. Not empty
 			// 2. No path traversal (..)
 			// 3. Valid format: [A-Za-z_]+(/[A-Za-z_]+)?
 			// 4. Exists in /usr/share/zoneinfo
-			
+
 			err := validateTimezone(tc.timezone)
-			
+
 			if tc.shouldBeValid {
 				require.NoError(t, err,
 					"Valid timezone %q should pass validation (%s)", tc.timezone, tc.reason)
@@ -155,55 +157,55 @@ func TestTimedate_TimezoneValidation(t *testing.T) {
 // TestKeyboard_EmptyParametersHandled verifies proper handling of optional keyboard parameters
 func TestKeyboard_EmptyParametersHandled(t *testing.T) {
 	tests := []struct {
-		name    string
-		layout  string
-		model   string
-		variant string
-		options string
+		name         string
+		layout       string
+		model        string
+		variant      string
+		options      string
 		expectedArgs []string
 	}{
 		{
-			name:    "all params provided",
-			layout:  "us",
-			model:   "pc105",
-			variant: "dvorak",
-			options: "ctrl:nocaps",
+			name:         "all params provided",
+			layout:       "us",
+			model:        "pc105",
+			variant:      "dvorak",
+			options:      "ctrl:nocaps",
 			expectedArgs: []string{"set-x11-keymap", "us", "pc105", "dvorak", "ctrl:nocaps"},
 		},
 		{
-			name:    "no model or variant",
-			layout:  "us",
-			model:   "",
-			variant: "",
-			options: "ctrl:nocaps",
+			name:         "no model or variant",
+			layout:       "us",
+			model:        "",
+			variant:      "",
+			options:      "ctrl:nocaps",
 			expectedArgs: []string{"set-x11-keymap", "us", "", "", "ctrl:nocaps"},
 		},
 		{
-			name:    "model but no variant",
-			layout:  "us",
-			model:   "pc105",
-			variant: "",
-			options: "ctrl:nocaps",
+			name:         "model but no variant",
+			layout:       "us",
+			model:        "pc105",
+			variant:      "",
+			options:      "ctrl:nocaps",
 			expectedArgs: []string{"set-x11-keymap", "us", "pc105", "", "ctrl:nocaps"},
 		},
 		{
-			name:    "only layout",
-			layout:  "us",
-			model:   "",
-			variant: "",
-			options: "",
+			name:         "only layout",
+			layout:       "us",
+			model:        "",
+			variant:      "",
+			options:      "",
 			expectedArgs: []string{"set-x11-keymap", "us"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: Install() at lines 249-272 properly handles empty parameters
+			// FIXED: Install() properly handles empty parameters
 			// It only adds non-empty parameters, but uses "" placeholders when needed
-			
+
 			// Simulate the logic from Install()
 			x11Args := []string{"set-x11-keymap", tc.layout}
-			
+
 			// Only add optional parameters if they're non-empty
 			if tc.model != "" {
 				x11Args = append(x11Args, tc.model)
@@ -226,7 +228,7 @@ func TestKeyboard_EmptyParametersHandled(t *testing.T) {
 				// both empty but options set: need two empty placeholders
 				x11Args = append(x11Args, "", "", tc.options)
 			}
-			
+
 			require.Equal(t, tc.expectedArgs, x11Args,
 				"Command args should be constructed correctly")
 		})
@@ -236,11 +238,11 @@ func TestKeyboard_EmptyParametersHandled(t *testing.T) {
 // TestListInstalled_LocaleParsingCorrect verifies improved locale parsing
 func TestListInstalled_LocaleParsingCorrect(t *testing.T) {
 	tests := []struct {
-		name           string
-		desiredLocale  string
-		localectlOut   string
-		shouldMatch    bool
-		reason         string
+		name          string
+		desiredLocale string
+		localectlOut  string
+		shouldMatch   bool
+		reason        string
 	}{
 		{
 			name:          "exact match works",
@@ -267,9 +269,9 @@ func TestListInstalled_LocaleParsingCorrect(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: ListInstalled() at lines 152-175 now parses more carefully
+			// FIXED: ListInstalled() now parses more carefully
 			// It looks for "System Locale:" line and extracts LANG= value properly
-			
+
 			found := false
 			for _, line := range strings.Split(tc.localectlOut, "\n") {
 				line = strings.TrimSpace(line)
@@ -286,7 +288,7 @@ func TestListInstalled_LocaleParsingCorrect(t *testing.T) {
 					}
 				}
 			}
-			
+
 			require.Equal(t, tc.shouldMatch, found,
 				"%s: expected match=%v, got=%v", tc.reason, tc.shouldMatch, found)
 		})
@@ -298,33 +300,33 @@ func TestInstall_RaceConditionKnown(t *testing.T) {
 	// KNOWN LIMITATION: Install() still reads from global systemConfig
 	// This is by design - the config parameter just indicates what type of config to install
 	// The actual values come from the global systemConfig struct
-	
+
 	// Set keyboard config
 	Keyboard("us", "us", "pc105", "dvorak", "ctrl:nocaps")
-	
+
 	mgr := systemConfigManager{}
 	wantedConfigs := mgr.Wanted()
-	
+
 	// The config contains marker strings like "keyboard:configured"
 	// The actual values are read from systemConfig global during Install()
 	require.Contains(t, wantedConfigs, "keyboard:configured",
 		"Wanted list contains keyboard config marker")
-	
+
 	// This is the intended design - Install() reads from systemConfig
-	// at lines 239-271 for keyboard settings
+	// for keyboard settings
 	require.Equal(t, "us", systemConfig.Layout)
 	require.Equal(t, "pc105", systemConfig.Model)
-	
+
 	t.Log("This behavior is by design: config markers in Wanted(), values from global in Install()")
 }
 
 // TestInstall_MalformedConfigRejected verifies validation for malformed config strings
 func TestInstall_MalformedConfigRejected(t *testing.T) {
 	tests := []struct {
-		name           string
-		config         string
-		expectError    bool
-		errorContains  string
+		name          string
+		config        string
+		expectError   bool
+		errorContains string
 	}{
 		{
 			name:          "missing colon separator",
@@ -360,9 +362,9 @@ func TestInstall_MalformedConfigRejected(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			// FIXED: Install() now validates config format at line 194
+			// FIXED: Install() now validates config format
 			// and returns errors for malformed configs
-			
+
 			// Simulate validation logic
 			parts := strings.SplitN(tc.config, ":", 2)
 			if len(parts) != 2 {
@@ -370,11 +372,11 @@ func TestInstall_MalformedConfigRejected(t *testing.T) {
 				require.True(t, tc.expectError, "Malformed config should be rejected")
 				return
 			}
-			
+
 			configType := parts[0]
 			configValue := parts[1]
-			
-			// Check if type is recognized (line 197, 206, 220, 236, default: 278)
+
+			// Check if type is recognized
 			var err error
 			switch configType {
 			case "timezone":
@@ -390,7 +392,7 @@ func TestInstall_MalformedConfigRejected(t *testing.T) {
 			default:
 				err = fmt.Errorf("unrecognized system config type: %s", configType)
 			}
-			
+
 			if tc.expectError {
 				require.Error(t, err, "Config %q should produce error", tc.config)
 				if tc.errorContains != "" {
@@ -399,7 +401,7 @@ func TestInstall_MalformedConfigRejected(t *testing.T) {
 			} else {
 				require.NoError(t, err, "Valid config %q should not error", tc.config)
 			}
-			
+
 			// Test actual Install() if it's a valid config
 			if !tc.expectError {
 				// Can't actually run Install() in test without sudo, but we verified validation
@@ -415,7 +417,7 @@ func TestWanted_NTPDisableSupported(t *testing.T) {
 	Timedate("America/New_York", true)
 	mgr := systemConfigManager{}
 	wanted := mgr.Wanted()
-	
+
 	hasNTPEnabled := false
 	hasNTPDisabled := false
 	for _, item := range wanted {
@@ -428,12 +430,12 @@ func TestWanted_NTPDisableSupported(t *testing.T) {
 	}
 	require.True(t, hasNTPEnabled, "When NTP=true, wanted list should contain 'ntp:enabled'")
 	require.False(t, hasNTPDisabled, "When NTP=true, 'ntp:disabled' should not be present")
-	
+
 	// Test case 2: NTP disabled - NOW SUPPORTED
 	Timedate("America/New_York", false)
 	wanted = mgr.Wanted()
-	
-	// FIXED: lines 119-121 now add "ntp:disabled" when NTP==false
+
+	// FIXED: Wanted() now adds "ntp:disabled" when NTP==false
 	//   } else if systemConfig.Timezone != "" {
 	//       wanted = append(wanted, "ntp:disabled")
 	//   }
@@ -447,11 +449,43 @@ func TestWanted_NTPDisableSupported(t *testing.T) {
 			hasNTPEnabled = true
 		}
 	}
-	
+
 	require.False(t, hasNTPEnabled, "When NTP=false, 'ntp:enabled' should not be in wanted")
 	require.True(t, hasNTPDisabled,
 		"When NTP=false, 'ntp:disabled' should be in wanted list to allow disabling NTP")
-	
-	// Verify Install() handles ntp:disabled at lines 212-216
+
+	// Verify Install() handles ntp:disabled
 	// (Can't test actual execution without sudo, but verified the code exists)
+}
+
+// SystemConfigBugValidateTimezoneRejectsExistingIANAZones demonstrates that
+// validateTimezone() rejects legitimate IANA timezones that are present in
+// /usr/share/zoneinfo, because its format regexp only allows a single "/"
+// component and no letters-hyphen/digit characters.
+//
+// Contract (from the function's own doc comment): validate the timezone by
+// "checking if it exists in zoneinfo". These zones exist, so they must be
+// accepted.
+func TestSystemConfigBugValidateTimezoneRejectsExistingIANAZones(t *testing.T) {
+	// All of these exist under /usr/share/zoneinfo on Arch Linux.
+	zones := []string{
+		"America/Argentina/Buenos_Aires", // two "/" components
+		"America/Indiana/Indianapolis",   // two "/" components
+		"America/Kentucky/Louisville",    // two "/" components
+		"America/Port-au-Prince",         // hyphen in city name
+		"Etc/GMT+5",                      // digit and "+"
+	}
+
+	for _, zone := range zones {
+		zone := zone
+		t.Run(zone, func(t *testing.T) {
+			path := filepath.Join("/usr/share/zoneinfo", zone)
+			if _, err := os.Stat(path); err != nil {
+				t.Skipf("zone %q not installed on this system (%s)", zone, path)
+			}
+
+			require.NoError(t, validateTimezone(zone),
+				"validateTimezone() must accept existing IANA zone %q", zone)
+		})
+	}
 }

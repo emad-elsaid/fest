@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -127,10 +128,10 @@ func TestExecuteCallbacks_PanicPreventsSubsequentCallbacks(t *testing.T) {
 // ============================================================
 
 type mockPackageManagerWithFailingRefresh struct {
-	installed      []string
-	explicit       []string
-	failOnSecond   bool
-	listCallCount  int
+	installed     []string
+	explicit      []string
+	failOnSecond  bool
+	listCallCount int
 }
 
 func (m *mockPackageManagerWithFailingRefresh) ResourceName() string { return "mock" }
@@ -142,7 +143,7 @@ func (m *mockPackageManagerWithFailingRefresh) Match(w, h string) bool {
 func (m *mockPackageManagerWithFailingRefresh) ListInstalled() ([]string, error) {
 	m.listCallCount++
 	if m.failOnSecond && m.listCallCount == 2 {
-		return nil, errors.New("mock error") // BUG: This error is silently ignored at line 167
+		return nil, errors.New("mock error") // BUG: This error was silently ignored by syncPackages
 	}
 	return m.installed, nil
 }
@@ -167,7 +168,7 @@ func (m *mockPackageManagerWithFailingRefresh) GetDependencies() (map[string][]s
 func (m *mockPackageManagerWithFailingRefresh) SaveAsGo(wanted []string) error { return nil }
 
 func TestSyncPackages_ListInstalledErrorAfterInstall_SilentlyIgnored(t *testing.T) {
-	// SETUP: Mock that fails on second ListInstalled call (line 167)
+	// SETUP: Mock that fails on second ListInstalled call
 	mock := &mockPackageManagerWithFailingRefresh{
 		installed:    []string{},
 		explicit:     []string{},
@@ -176,8 +177,8 @@ func TestSyncPackages_ListInstalledErrorAfterInstall_SilentlyIgnored(t *testing.
 
 	wanted := []string{"new-package"}
 
-	// FIXED: syncPackages now properly handles error from ListInstalled on line 167
-	// Line 167 was: `installed, _ = pm.ListInstalled()`
+	// FIXED: syncPackages now properly handles error from ListInstalled
+	// Previously: `installed, _ = pm.ListInstalled()`
 	// Now: `installed, err = pm.ListInstalled()` with proper error handling
 	err := syncPackages(mock, wanted)
 
@@ -188,4 +189,32 @@ func TestSyncPackages_ListInstalledErrorAfterInstall_SilentlyIgnored(t *testing.
 	// Verify the second call actually failed
 	require.Equal(t, 2, mock.listCallCount,
 		"ListInstalled should be called twice (initial + refresh after install)")
+}
+
+// Registering hooks via Before/After is guarded by the callbacks mutex, but
+// executeCallbacks reads callbacks.before / callbacks.after directly, with no
+// synchronization. A hook registered from any goroutine
+// other than the apply/update goroutine therefore races the map read.
+//
+// Correct behavior: executeCallbacks must synchronize with the same registry
+// mutex. This test holds the write lock and invokes executeCallbacks from
+// another goroutine; a correctly synchronized implementation blocks until the
+// lock is released, whereas the current implementation returns immediately.
+func TestInterfaceBugExecuteCallbacksReadsRegistryWithoutLock(t *testing.T) {
+	callbacks.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		executeCallbacks("interface-bug-sync-check", callbacks.before, "before")
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		callbacks.Unlock()
+		t.Fatal("executeCallbacks read callbacks.before without acquiring the registry lock; " +
+			"concurrent Before/After registration is a data race")
+	case <-time.After(200 * time.Millisecond):
+		callbacks.Unlock()
+	}
 }

@@ -30,8 +30,9 @@ func (u userGroups) Wanted() []string { return groups }
 func (u userGroups) ResourceName() string         { return string(ResourceUserGroups) }
 func (u userGroups) Match(want, have string) bool { return want == have }
 
-func (u userGroups) getPrimaryGroup() (string, error) {
-	stdout, err := types.Cmd("id", "-gn").StdoutErr()
+// getPrimaryGroup returns the primary group of the given user.
+func (u userGroups) getPrimaryGroup(username string) (string, error) {
+	stdout, err := types.Cmd("id", "-gn", username).StdoutErr()
 	if err != nil {
 		return "", err
 	}
@@ -51,7 +52,7 @@ func (u userGroups) ListInstalled() ([]string, error) {
 		return nil, err
 	}
 
-	primaryGroup, err := u.getPrimaryGroup()
+	primaryGroup, err := u.getPrimaryGroup(username)
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +76,7 @@ func (u userGroups) Install(grps []string) error {
 	if username == "" {
 		return fmt.Errorf("USER env var not set")
 	}
-	
+
 	// Validate username format (basic alphanumeric + underscore/dash)
 	if !isValidUsername(username) {
 		return fmt.Errorf("invalid username format: %q", username)
@@ -89,7 +90,7 @@ func (u userGroups) Install(grps []string) error {
 		if strings.ContainsAny(grp, " \t\n\r") {
 			return fmt.Errorf("group name cannot contain whitespace: %q", grp)
 		}
-		
+
 		slog.Info("Adding user to group", "group", grp, "user", username)
 		if err := types.Sudo("usermod", "-aG", grp, username).Interactive().Error(); err != nil {
 			return err
@@ -104,7 +105,7 @@ func (u userGroups) Uninstall(grps []string) error {
 	if username == "" {
 		return fmt.Errorf("USER env var not set")
 	}
-	
+
 	// Validate username format (basic alphanumeric + underscore/dash)
 	if !isValidUsername(username) {
 		return fmt.Errorf("invalid username format: %q", username)
@@ -118,7 +119,7 @@ func (u userGroups) Uninstall(grps []string) error {
 		if strings.ContainsAny(grp, " \t\n\r") {
 			return fmt.Errorf("group name cannot contain whitespace: %q", grp)
 		}
-		
+
 		slog.Info("Removing user from group", "group", grp, "user", username)
 		if err := types.Sudo("gpasswd", "-d", username, grp).Interactive().Error(); err != nil {
 			return err

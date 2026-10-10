@@ -31,7 +31,8 @@ func NpmPackage(pkgs ...string) {
 	// Validate and filter out empty/whitespace-only packages
 	valid := make([]string, 0, len(pkgs))
 	for _, pkg := range pkgs {
-		if strings.TrimSpace(pkg) != "" {
+		pkg = strings.TrimSpace(pkg)
+		if pkg != "" {
 			valid = append(valid, pkg)
 		}
 	}

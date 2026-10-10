@@ -90,7 +90,10 @@ func (h *prettyHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return h
 	}
-	return &prettyHandler{w: h.w, attrs: h.attrs, groups: append(h.groups, name)}
+	groups := make([]string, len(h.groups)+1)
+	copy(groups, h.groups)
+	groups[len(h.groups)] = name
+	return &prettyHandler{w: h.w, attrs: h.attrs, groups: groups}
 }
 
 // Handle formats and writes log records to the output writer.
@@ -104,12 +107,14 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 	fmt.Fprintf(&buf, "%s %s", emoji, r.Message)
 
-	processAttr := func(a slog.Attr) {
-		key := a.Key
-		if len(h.groups) > 0 {
-			key = strings.Join(h.groups, ".") + "." + key
-		}
-		
+	prefix := ""
+	if len(h.groups) > 0 {
+		prefix = strings.Join(h.groups, ".") + "."
+	}
+
+	processAttr := func(a slog.Attr, keyPrefix string) {
+		key := keyPrefix + a.Key
+
 		value := a.Value.Any()
 		if a.Key == "count" {
 			fmt.Fprintf(&buf, " (%v)", value)
@@ -123,11 +128,13 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 		}
 	}
 
+	// h.attrs are already qualified with the groups active when they were added.
 	for _, attr := range h.attrs {
-		processAttr(attr)
+		processAttr(attr, "")
 	}
+	// Record attributes are qualified by all of the handler's current groups.
 	r.Attrs(func(a slog.Attr) bool {
-		processAttr(a)
+		processAttr(a, prefix)
 		return true
 	})
 
@@ -139,6 +146,19 @@ func (h *prettyHandler) Handle(_ context.Context, r slog.Record) error {
 }
 
 // WithAttrs returns a new handler with the given attributes prepended.
+// Attributes are qualified with the groups active at the time they are added,
+// per the slog.Handler contract, and the returned handler never shares storage
+// with the receiver.
 func (h *prettyHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &prettyHandler{w: h.w, attrs: append(h.attrs, attrs...), groups: h.groups}
+	prefix := ""
+	if len(h.groups) > 0 {
+		prefix = strings.Join(h.groups, ".") + "."
+	}
+	qualified := make([]slog.Attr, 0, len(h.attrs)+len(attrs))
+	qualified = append(qualified, h.attrs...)
+	for _, a := range attrs {
+		a.Key = prefix + a.Key
+		qualified = append(qualified, a)
+	}
+	return &prettyHandler{w: h.w, attrs: qualified, groups: h.groups}
 }

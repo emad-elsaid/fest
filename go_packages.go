@@ -40,6 +40,9 @@ func (g goPackages) getGoBin() (string, error) {
 		}
 		gopath = filepath.Join(home, "go")
 	}
+	// The go command derives the default bin dir from the first entry of a
+	// path-list GOPATH (e.g. GOPATH=/a:/b -> /a/bin).
+	gopath = strings.Split(gopath, string(os.PathListSeparator))[0]
 	return filepath.Join(gopath, "bin"), nil
 }
 

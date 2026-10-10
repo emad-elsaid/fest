@@ -3,11 +3,11 @@ package fest
 import "github.com/emad-elsaid/types"
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/manifoldco/promptui"
 	"github.com/samber/lo"
@@ -49,7 +49,7 @@ func readFileWithSudo(path string) ([]byte, error) {
 
 // listSystemDirFiles returns all files in the system files directories and their target paths
 func listSystemDirFiles() (map[string]string, error) {
-	files := make(map[string]string)         // srcPath -> targetPath
+	files := make(map[string]string)             // srcPath -> targetPath
 	targetToSources := make(map[string][]string) // targetPath -> []srcPath (for collision detection)
 
 	for _, systemFilesDir := range systemFilesDirs {
@@ -73,10 +73,10 @@ func listSystemDirFiles() (map[string]string, error) {
 
 			// Target path is / + relPath
 			targetPath := "/" + relPath
-			
+
 			// Track potential collision
 			targetToSources[targetPath] = append(targetToSources[targetPath], path)
-			
+
 			// Later directories override earlier ones if same target path
 			files[path] = targetPath
 			return nil
@@ -157,8 +157,8 @@ func (s systemFiles) ListInstalled() ([]string, error) {
 			continue
 		}
 
-		// Compare contents
-		if strings.TrimSpace(string(srcContent)) == strings.TrimSpace(string(targetContent)) {
+		// Compare contents exactly
+		if bytes.Equal(srcContent, targetContent) {
 			installed = append(installed, targetPath)
 		}
 	}
@@ -172,6 +172,13 @@ func (s systemFiles) Install(ops []string) error {
 		slog.Warn("Failed to load state, starting fresh", "error", err)
 		state = &systemFilesState{Version: 1, Files: make(map[string]fileState)}
 	}
+	// Persist tracked state even if a later operation fails, so files already
+	// deployed in this run stay restorable/uninstallable.
+	defer func() {
+		if err := saveState(state); err != nil {
+			slog.Warn("Failed to save state", "error", err)
+		}
+	}()
 
 	dirFiles, err := listSystemDirFiles()
 	if err != nil {
@@ -257,9 +264,6 @@ func (s systemFiles) Install(ops []string) error {
 		state.Files[targetPath] = entry
 	}
 
-	if err := saveState(state); err != nil {
-		slog.Warn("Failed to save state", "error", err)
-	}
 	return nil
 }
 

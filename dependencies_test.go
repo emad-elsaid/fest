@@ -1,6 +1,8 @@
 package fest
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -148,7 +150,7 @@ func TestInstallDependencies_EmptyPackageNames(t *testing.T) {
 
 	// Bug: installDependencies doesn't validate that dep.pkg() returns non-empty strings
 	// This will attempt to run "pacman -Si ''" which may behave unpredictably
-	// 
+	//
 	// Expected behavior: Should return error for invalid dependency BEFORE attempting install
 	// Actual behavior: Proceeds with empty package name, yay reports "Query arg too small"
 	//                  but function returns nil (success) instead of error
@@ -179,4 +181,40 @@ func TestCheckDependencies_AllOptionalMissing(t *testing.T) {
 	err := checkDependencies()
 
 	require.NoError(t, err, "checkDependencies should not error when only optional deps missing")
+}
+
+// DependenciesBugWriteExecutable creates an executable file so it can be
+// discovered through PATH lookup.
+func DependenciesBugWriteExecutable(t *testing.T, dir, name string) {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	require.NoError(t, os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755))
+}
+
+// TestDependenciesBugIsInstalledRequiresExternalWhich documents that
+// isInstalled detects a dependency by shelling out to the
+// external `which` binary instead of using os/exec.LookPath.
+//
+// Contract: `dependency.Name` is the command name to look for, and isInstalled
+// must report it as installed whenever that command is resolvable through PATH.
+//
+// The current implementation runs `types.Cmd("which", dep.Name)`, so on any
+// system that lacks the standalone `which` program (it is not part of Arch's
+// `base` group, only `base-devel`, and it is absent from minimal/container
+// images) every dependency is reported missing even when the tool is present.
+// checkDependencies then tries to reinstall already-installed tools and aborts
+// with "failed to install required dependencies".
+func TestDependenciesBugIsInstalledRequiresExternalWhich(t *testing.T) {
+	dir := t.TempDir()
+	DependenciesBugWriteExecutable(t, dir, "DependenciesBugPresentTool")
+
+	// Point PATH at the temp dir only: the tool below is resolvable, but the
+	// external `which` helper is not.
+	oldPath := os.Getenv("PATH")
+	require.NoError(t, os.Setenv("PATH", dir))
+	defer func() { _ = os.Setenv("PATH", oldPath) }()
+
+	dep := dependency{Name: "DependenciesBugPresentTool", Required: true}
+	require.True(t, isInstalled(dep),
+		"a command that is present in PATH must be reported as installed, even when the external `which` helper is unavailable")
 }
