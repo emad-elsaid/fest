@@ -91,3 +91,19 @@ func (c *Client) Install(ctx context.Context, packages []string) error {
 
 	return syncInstall(ctx, c.run, cmdArgs, c.dbExecutor)
 }
+
+// Sysupgrade upgrades every installed package (both official repos and AUR) to
+// its latest version, refreshing the package databases first.
+func (c *Client) Sysupgrade(ctx context.Context) error {
+	cmdArgs := parser.MakeArguments()
+	cmdArgs.AddArg("S", "sync")
+	cmdArgs.AddArg("y", "refresh")
+	cmdArgs.AddArg("u", "sysupgrade")
+
+	// Add user-provided args
+	for _, arg := range c.args {
+		cmdArgs.AddArg(arg)
+	}
+
+	return syncInstall(ctx, c.run, cmdArgs, c.dbExecutor)
+}

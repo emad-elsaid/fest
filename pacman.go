@@ -75,21 +75,30 @@ func (p pacman) ListExplicit() ([]string, error) {
 	return strings.Fields(stdout), nil
 }
 
-func (p *pacman) Install(pkgs []string) error {
-	// Initialize the yay client once and reuse it for the lifetime of the
-	// manager, so repeated installs don't rebuild the alpm executor each time.
-	// ponytail: client is never closed; the interface has no teardown hook, so it
-	// is released on process exit. Add a Close hook if that lifetime must shrink.
+// client lazily initializes the embedded yay client once and reuses it for the
+// lifetime of the manager, so repeated operations don't rebuild the alpm
+// executor each time.
+// ponytail: client is never closed; the interface has no teardown hook, so it
+// is released on process exit. Add a Close hook if that lifetime must shrink.
+func (p *pacman) client() (*yay.Client, error) {
 	if p.yayClient == nil {
 		client, err := yay.NewClient("needed", "noconfirm")
 		if err != nil {
-			return fmt.Errorf("failed to initialize yay: %w", err)
+			return nil, fmt.Errorf("failed to initialize yay: %w", err)
 		}
 		p.yayClient = client
 	}
+	return p.yayClient, nil
+}
+
+func (p *pacman) Install(pkgs []string) error {
+	client, err := p.client()
+	if err != nil {
+		return err
+	}
 
 	ctx := context.Background()
-	return p.yayClient.Install(ctx, pkgs)
+	return client.Install(ctx, pkgs)
 }
 
 func (p pacman) Uninstall(pkgs []string) error {
@@ -100,11 +109,16 @@ func (p pacman) MarkExplicit(pkgs []string) error {
 	return types.Sudo("pacman", append([]string{"-D", "--asexplicit"}, pkgs...)...).Interactive().Error()
 }
 
-func (p pacman) Update() error {
-	// Pacman packages are never version-locked in the declaration, so a full
-	// system upgrade refreshes the databases and updates every installed package.
+func (p *pacman) Update() error {
+	// The embedded yay sysupgrade refreshes the databases and upgrades both
+	// official repo and AUR packages. Pacman packages are never version-locked
+	// in the declaration, so a full system upgrade is the right behavior.
+	client, err := p.client()
+	if err != nil {
+		return err
+	}
 	slog.Info("Updating system packages")
-	return types.Sudo("pacman", "-Syu").Interactive().Error()
+	return client.Sysupgrade(context.Background())
 }
 
 func (p pacman) GetDependencies() (map[string][]string, error) {
