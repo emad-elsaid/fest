@@ -175,6 +175,34 @@ func TestListInstalled_IncludesOrphansInState(t *testing.T) {
 	require.Contains(t, installed, target, "orphaned tracked file should be reported installed")
 }
 
+// TestListInstalled_SkipsReplacedOrphans tests that a tracked file whose source
+// was deleted but whose on-disk content no longer matches what fest installed
+// (e.g. a package reinstall restored the vendor default) is NOT reported as
+// installed, so fest stops flagging it as unnecessary.
+func TestListInstalled_SkipsReplacedOrphans(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	target := filepath.Join(home, "etc", "pam.d", "login")
+	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0755))
+	require.NoError(t, os.WriteFile(target, []byte("vendor default"), 0644))
+
+	require.NoError(t, saveState(&systemFilesState{Version: 1, Files: map[string]fileState{
+		target: {InstalledHash: hashBytes([]byte("fest content"))},
+	}}))
+
+	original := systemFilesDirs
+	defer func() { systemFilesDirs = original }()
+	emptySource := filepath.Join(home, "system")
+	require.NoError(t, os.MkdirAll(emptySource, 0755))
+	systemFilesDirs = []string{emptySource}
+
+	installed, err := systemFiles{}.ListInstalled()
+	require.NoError(t, err)
+	require.NotContains(t, installed, target,
+		"file replaced by something else must no longer be reported installed")
+}
+
 // TestReadFileWithSudo_RegularFile tests normal file reading without sudo
 func TestReadFileWithSudo_RegularFile(t *testing.T) {
 	tmpDir := t.TempDir()

@@ -134,13 +134,18 @@ func (s systemFiles) ListInstalled() ([]string, error) {
 		for _, targetPath := range dirFiles {
 			current[targetPath] = struct{}{}
 		}
-		for targetPath := range state.Files {
+		for targetPath, entry := range state.Files {
 			if _, ok := current[targetPath]; ok {
 				continue
 			}
-			if _, statErr := os.Stat(targetPath); statErr == nil {
-				installed = append(installed, targetPath)
+			// Only still ours while our exact content is deployed. If a
+			// package reinstall or manual edit replaced it, the file belongs
+			// to something else now and must not be offered for uninstall.
+			content, readErr := readFileWithSudo(targetPath)
+			if readErr != nil || hashBytes(content) != entry.InstalledHash {
+				continue
 			}
+			installed = append(installed, targetPath)
 		}
 	}
 
