@@ -1,434 +1,254 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fest - Immutable Arch Linux Without Compromise</title>
-    <meta name="description" content="Declarative, immutable system configuration for Arch Linux using Go. All the benefits of NixOS, none of the complexity.">
-    <style>
-        :root {
-            --arch-blue: #1793d1;
-            --dark-bg: #0a0e27;
-            --darker-bg: #050814;
-            --text-light: #e8e8e8;
-            --text-muted: #a0a0a0;
-            --accent-green: #00d9a3;
-            --code-bg: #1a1f3a;
-        }
-        
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
-            background: var(--darker-bg);
-            color: var(--text-light);
-            line-height: 1.6;
-            overflow-x: hidden;
-        }
-        
-        .hero {
-            min-height: 100vh;
-            background: linear-gradient(135deg, var(--darker-bg) 0%, var(--dark-bg) 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .hero::before {
-            content: '';
-            position: absolute;
-            width: 800px;
-            height: 800px;
-            background: radial-gradient(circle, rgba(23, 147, 209, 0.1) 0%, transparent 70%);
-            border-radius: 50%;
-            top: -400px;
-            right: -400px;
-        }
-        
-        .hero-content {
-            max-width: 1200px;
-            padding: 4rem 2rem;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            margin-bottom: 2rem;
-        }
-        
-        .logo-icon {
-            width: 60px;
-            height: 60px;
-            background: var(--arch-blue);
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 900;
-            font-size: 28px;
-            color: white;
-        }
-        
-        h1 {
-            font-size: clamp(2.5rem, 6vw, 4.5rem);
-            font-weight: 800;
-            margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, var(--arch-blue), var(--accent-green));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .tagline {
-            font-size: clamp(1.2rem, 3vw, 1.8rem);
-            color: var(--text-muted);
-            margin-bottom: 3rem;
-            max-width: 800px;
-        }
-        
-        .cta-buttons {
-            display: flex;
-            gap: 1.5rem;
-            margin-bottom: 3rem;
-            flex-wrap: wrap;
-        }
-        
-        .btn {
-            padding: 1rem 2.5rem;
-            border-radius: 8px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            text-decoration: none;
-            transition: all 0.3s ease;
-            display: inline-block;
-        }
-        
-        .btn-primary {
-            background: var(--arch-blue);
-            color: white;
-            box-shadow: 0 4px 20px rgba(23, 147, 209, 0.3);
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 30px rgba(23, 147, 209, 0.5);
-        }
-        
-        .btn-secondary {
-            background: transparent;
-            color: var(--text-light);
-            border: 2px solid var(--arch-blue);
-        }
-        
-        .btn-secondary:hover {
-            background: var(--arch-blue);
-            transform: translateY(-2px);
-        }
-        
-        .code-preview {
-            background: var(--code-bg);
-            border-radius: 12px;
-            padding: 2rem;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 0.95rem;
-            overflow-x: auto;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            margin-bottom: 2rem;
-            border: 1px solid rgba(23, 147, 209, 0.2);
-        }
-        
-        .code-preview pre {
-            color: #e8e8e8;
-            line-height: 1.8;
-            margin: 0;
-        }
-        
-        .code-preview code {
-            font-family: inherit;
-        }
-        
-        /* Prism.js custom theme - remove backgrounds, dark theme colors */
-        code[class*="language-"],
-        pre[class*="language-"] {
-            color: #e8e8e8;
-            background: none;
-            text-shadow: none;
-            font-family: 'Monaco', 'Courier New', monospace;
-            text-align: left;
-            white-space: pre;
-            word-spacing: normal;
-            word-break: normal;
-            word-wrap: normal;
-            line-height: 1.8;
-            tab-size: 4;
-        }
-        
-        pre[class*="language-"] {
-            padding: 0;
-            margin: 0;
-            overflow: auto;
-        }
-        
-        :not(pre) > code[class*="language-"] {
-            background: none;
-            padding: 0;
-        }
-        
-        /* Syntax highlighting colors matching the dark theme */
-        .token.comment,
-        .token.prolog,
-        .token.doctype,
-        .token.cdata {
-            color: #6272a4;
-            font-style: italic;
-        }
-        
-        .token.punctuation {
-            color: #e8e8e8;
-        }
-        
-        .token.property,
-        .token.tag,
-        .token.constant,
-        .token.symbol,
-        .token.deleted {
-            color: #ff79c6;
-        }
-        
-        .token.boolean,
-        .token.number {
-            color: #bd93f9;
-        }
-        
-        .token.selector,
-        .token.attr-name,
-        .token.string,
-        .token.char,
-        .token.builtin,
-        .token.inserted {
-            color: #f1fa8c;
-        }
-        
-        .token.operator,
-        .token.entity,
-        .token.url,
-        .language-css .token.string,
-        .style .token.string,
-        .token.variable {
-            color: #e8e8e8;
-        }
-        
-        .token.atrule,
-        .token.attr-value,
-        .token.function,
-        .token.class-name {
-            color: #50fa7b;
-        }
-        
-        .token.keyword {
-            color: #ff79c6;
-        }
-        
-        .token.regex,
-        .token.important {
-            color: #ffb86c;
-        }
-        
-        section {
-            padding: 6rem 2rem;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        
-        h2 {
-            font-size: clamp(2rem, 4vw, 3rem);
-            margin-bottom: 3rem;
-            text-align: center;
-            color: var(--arch-blue);
-        }
-        
-        .comparison-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-bottom: 4rem;
-        }
-        
-        .comparison-card {
-            background: var(--code-bg);
-            padding: 2rem;
-            border-radius: 12px;
-            border: 2px solid transparent;
-            transition: all 0.3s ease;
-        }
-        
-        .comparison-card.winner {
-            border-color: var(--accent-green);
-            box-shadow: 0 0 30px rgba(0, 217, 163, 0.2);
-        }
-        
-        .comparison-card h3 {
-            font-size: 1.5rem;
-            margin-bottom: 1rem;
-            color: var(--accent-green);
-        }
-        
-        .comparison-card.winner h3::before {
-            content: '✓ ';
-            color: var(--accent-green);
-        }
-        
-        .comparison-card ul {
-            list-style: none;
-            padding-left: 0;
-        }
-        
-        .comparison-card li {
-            padding: 0.5rem 0;
-            padding-left: 1.5rem;
-            position: relative;
-        }
-        
-        .comparison-card li::before {
-            content: '▸';
-            position: absolute;
-            left: 0;
-            color: var(--arch-blue);
-        }
-        
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 2rem;
-        }
-        
-        .feature-card {
-            background: var(--code-bg);
-            padding: 2rem;
-            border-radius: 12px;
-            border-left: 4px solid var(--arch-blue);
-            transition: transform 0.3s ease;
-        }
-        
-        .feature-card:hover {
-            transform: translateX(8px);
-        }
-        
-        .feature-card h3 {
-            font-size: 1.3rem;
-            margin-bottom: 1rem;
-            color: var(--accent-green);
-        }
-        
-        .feature-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1rem;
-            display: block;
-        }
-        
-        .why-section {
-            background: var(--dark-bg);
-            border-radius: 12px;
-            padding: 3rem;
-            margin: 4rem 0;
-        }
-        
-        .why-section h3 {
-            font-size: 1.8rem;
-            color: var(--arch-blue);
-            margin-bottom: 1.5rem;
-        }
-        
-        .why-section p {
-            font-size: 1.1rem;
-            color: var(--text-muted);
-            margin-bottom: 1rem;
-            line-height: 1.8;
-        }
-        
-        .comparison-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 3rem 0;
-            background: var(--code-bg);
-            border-radius: 12px;
-            overflow: hidden;
-        }
-        
-        .comparison-table th,
-        .comparison-table td {
-            padding: 1.2rem;
-            text-align: left;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .comparison-table th {
-            background: var(--dark-bg);
-            color: var(--accent-green);
-            font-weight: 600;
-        }
-        
-        .comparison-table tr:hover {
-            background: rgba(23, 147, 209, 0.1);
-        }
-        
-        .check { color: var(--accent-green); font-weight: bold; }
-        .cross { color: #ff5555; }
-        
-        footer {
-            text-align: center;
-            padding: 3rem 2rem;
-            color: var(--text-muted);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .highlight-box {
-            background: rgba(23, 147, 209, 0.1);
-            border-left: 4px solid var(--arch-blue);
-            padding: 1.5rem;
-            margin: 2rem 0;
-            border-radius: 4px;
-        }
-        
-        @media (max-width: 768px) {
-            .cta-buttons {
-                flex-direction: column;
-            }
-            
-            .btn {
-                text-align: center;
-            }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fest - Declarative Arch Linux Configuration in Go</title>
+<meta name="description" content="Declarative, immutable system configuration for Arch Linux using Go. All the benefits of NixOS, none of the complexity.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#08090c;
+    --panel:#0d1017;
+    --panel-2:#11151f;
+    --line:#1e2531;
+    --ink:#c8d3e0;
+    --muted:#6d7b8d;
+    --blue:#1793d1;
+    --cyan:#38e8d0;
+    --green:#4ade80;
+    --red:#f87171;
+    --yellow:#fbbf24;
+    --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--mono);
+    background:var(--bg);
+    color:var(--ink);
+    font-size:15px;
+    line-height:1.7;
+    -webkit-font-smoothing:antialiased;
+    background-image:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(23,147,209,.14), transparent 60%),
+      radial-gradient(ellipse 700px 400px at 90% 5%, rgba(56,232,208,.08), transparent 60%);
+  }
+  a{color:var(--cyan);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ---- top bar ---- */
+  .bar{
+    position:sticky;top:0;z-index:50;
+    display:flex;align-items:center;gap:1.25rem;
+    padding:.75rem 1.5rem;
+    background:rgba(8,9,12,.85);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+    font-size:.85rem;
+  }
+  .bar .prompt{color:var(--green)}
+  .bar .prompt b{color:var(--cyan);font-weight:500}
+  .bar nav{margin-left:auto;display:flex;gap:1.25rem;align-items:center}
+  .bar nav a{color:var(--muted)}
+  .bar nav a:hover{color:var(--cyan);text-decoration:none}
+  .bar .gh{border:1px solid var(--line);border-radius:4px;padding:.3rem .7rem;color:var(--ink)!important}
+  .bar .gh:hover{border-color:var(--blue);color:var(--cyan)!important}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:0 1.5rem}
+
+  /* ---- hero ---- */
+  .hero{padding:4.5rem 0 3rem}
+  .logo{
+    font-size:clamp(3rem,9vw,5.5rem);
+    font-weight:700;
+    letter-spacing:-.04em;
+    line-height:1;
+    color:#fff;
+  }
+  .logo .cursor{
+    display:inline-block;width:.55em;height:.9em;margin-left:.1em;
+    background:var(--cyan);vertical-align:-6%;
+    animation:blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink{50%{opacity:0}}
+  .kicker{color:var(--muted);margin-top:.85rem;font-size:.95rem}
+  .kicker .tag{color:var(--green)}
+  .tagline{
+    margin-top:1.75rem;max-width:62ch;
+    font-size:1.02rem;color:var(--ink);
+  }
+  .tagline em{color:var(--cyan);font-style:normal}
+
+  .ctas{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:2rem}
+  .btn{
+    font-family:var(--mono);font-size:.88rem;
+    padding:.7rem 1.3rem;border-radius:4px;border:1px solid var(--line);
+    background:var(--panel);color:var(--ink);
+    transition:.18s ease;cursor:pointer;
+  }
+  .btn:hover{text-decoration:none;border-color:var(--cyan);color:var(--cyan);transform:translateY(-1px)}
+  .btn.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btn.primary:hover{background:#1a9ee0;border-color:#1a9ee0;color:#fff;box-shadow:0 0 24px rgba(23,147,209,.45)}
+
+  /* ---- terminal window ---- */
+  .win{
+    border:1px solid var(--line);border-radius:8px;overflow:hidden;
+    background:var(--panel);margin-top:2.5rem;
+    box-shadow:0 20px 60px rgba(0,0,0,.55);
+  }
+  .win-head{
+    display:flex;align-items:center;gap:.5rem;
+    padding:.6rem .9rem;border-bottom:1px solid var(--line);
+    background:var(--panel-2);font-size:.78rem;color:var(--muted);
+  }
+  .dot{width:11px;height:11px;border-radius:50%}
+  .d1{background:#ff5f57}.d2{background:#febc2e}.d3{background:#28c840}
+  .win-title{margin-left:.6rem}
+  .win-body{padding:1.25rem 1.4rem;overflow-x:auto;font-size:.85rem;line-height:1.85}
+  pre{margin:0;font-family:var(--mono)}
+  .win-body code{font-family:var(--mono)}
+
+  /* prism overrides (dark) */
+  pre[class*="language-"],code[class*="language-"]{
+    background:none;color:var(--ink);text-shadow:none;font-family:var(--mono);
+    font-size:.85rem;line-height:1.85;tab-size:4;
+  }
+  .token.comment{color:#4d5b6e;font-style:italic}
+  .token.keyword{color:#ff79c6}
+  .token.string{color:#e3e07d}
+  .token.function,.token.class-name{color:var(--green)}
+  .token.number,.token.boolean{color:#bd93f9}
+  .token.operator,.token.punctuation{color:#9aa7b6}
+  .token.builtin{color:var(--cyan)}
+
+  /* ---- sections ---- */
+  section{padding:4rem 0}
+  .h2{
+    font-size:.82rem;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:2rem;display:flex;align-items:center;gap:.75rem;
+  }
+  .h2::before{content:'##';color:var(--green)}
+  .h2::after{content:'';flex:1;height:1px;background:var(--line)}
+
+  /* ---- diff comparison ---- */
+  .diff{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+  .pane{border:1px solid var(--line);border-radius:8px;background:var(--panel);overflow:hidden}
+  .pane-head{
+    padding:.6rem .9rem;border-bottom:1px solid var(--line);background:var(--panel-2);
+    font-size:.8rem;display:flex;justify-content:space-between;align-items:center;
+  }
+  .pane-head .who{color:#fff;font-weight:700}
+  .pane-head .verdict{font-size:.72rem;padding:.1rem .5rem;border-radius:3px}
+  .pane.plus .verdict{background:rgba(74,222,128,.12);color:var(--green);border:1px solid rgba(74,222,128,.35)}
+  .pane.minus .verdict{background:rgba(248,113,113,.1);color:var(--red);border:1px solid rgba(248,113,113,.3)}
+  .pane ul{list-style:none;padding:.6rem 0}
+  .pane li{padding:.28rem 1.1rem .28rem 2.2rem;position:relative;font-size:.88rem}
+  .pane li::before{position:absolute;left:1.1rem;font-weight:700}
+  .pane.plus li::before{content:'+';color:var(--green)}
+  .pane.minus li::before{content:'-';color:var(--red)}
+  .pane.minus li{color:var(--muted)}
+
+  .note{
+    margin-top:1.5rem;border:1px solid var(--line);border-left:3px solid var(--blue);
+    border-radius:0 6px 6px 0;background:var(--panel);
+    padding:1.4rem 1.6rem;
+  }
+  .note p{color:var(--ink);margin-bottom:.75rem;font-size:.92rem}
+  .note p:last-child{margin-bottom:0}
+  .note strong{color:var(--cyan)}
+
+  /* ---- table ---- */
+  .table-wrap{overflow-x:auto;margin-top:2rem;border:1px solid var(--line);border-radius:8px}
+  table{width:100%;border-collapse:collapse;font-size:.85rem;min-width:640px}
+  th,td{padding:.7rem 1rem;text-align:left;border-bottom:1px solid var(--line)}
+  th{background:var(--panel-2);color:var(--muted);font-weight:500;font-size:.75rem;text-transform:uppercase;letter-spacing:.1em}
+  tbody tr:hover{background:rgba(23,147,209,.06)}
+  tbody tr:last-child td{border-bottom:0}
+  td:first-child{color:#fff}
+  .ok{color:var(--green)}
+  .no{color:var(--red)}
+  .mid{color:var(--yellow)}
+
+  /* ---- features ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:1rem}
+  .card{
+    border:1px solid var(--line);border-radius:8px;background:var(--panel);
+    padding:1.4rem;transition:.2s ease;position:relative;
+  }
+  .card:hover{border-color:rgba(56,232,208,.5);transform:translateY(-3px);background:var(--panel-2)}
+  .card .ico{font-size:1.5rem;display:block;margin-bottom:.7rem}
+  .card h3{font-size:.98rem;color:#fff;margin-bottom:.5rem;font-weight:700}
+  .card h3::before{content:'> ';color:var(--cyan)}
+  .card p{font-size:.84rem;color:var(--muted);line-height:1.65}
+  .card code{background:var(--panel-2);border:1px solid var(--line);border-radius:3px;padding:.05rem .35rem;color:var(--cyan);font-size:.8rem}
+
+  /* ---- highlight ---- */
+  .hl{
+    margin-top:1.5rem;border:1px dashed rgba(56,232,208,.4);border-radius:8px;
+    background:rgba(56,232,208,.05);padding:1.3rem 1.5rem;font-size:.9rem;
+  }
+  .hl strong{color:var(--cyan)}
+  .hl code{color:var(--green)}
+
+  .center-cta{display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;margin-top:2.5rem}
+
+  footer{
+    border-top:1px solid var(--line);padding:3rem 1.5rem;margin-top:3rem;
+    text-align:center;color:var(--muted);font-size:.82rem;
+  }
+  footer .heart{color:#ff79c6}
+  footer .links{margin-top:.9rem;display:flex;gap:1.25rem;justify-content:center;flex-wrap:wrap}
+  footer .links a{color:var(--muted)}
+  footer .links a:hover{color:var(--cyan)}
+
+  .ribbon{
+    display:inline-flex;align-items:center;gap:.5rem;margin-bottom:1.5rem;
+    border:1px solid var(--line);border-radius:100px;padding:.3rem .9rem;
+    font-size:.75rem;color:var(--muted);background:var(--panel);
+  }
+  .ribbon .dot-g{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+
+  @media(max-width:720px){
+    .diff{grid-template-columns:1fr}
+    .bar nav a:not(.gh){display:none}
+    section{padding:3rem 0}
+  }
+</style>
 </head>
 <body>
-    <div class="hero">
-        <div class="hero-content">
-            <div class="logo">
-                <div class="logo-icon">Fst</div>
-                <h1>Fest</h1>
-            </div>
-            <p class="tagline">
-                Fest: solid, immutable system configuration for Arch Linux. All the power of declarative
-                infrastructure, none of the complexity. Written in Go.
-            </p>
-            
-            <div class="cta-buttons">
-                <a href="https://github.com/emad-elsaid/fest" class="btn btn-primary">Get Started</a>
-                <a href="https://pkg.go.dev/github.com/emad-elsaid/fest" class="btn btn-secondary">Documentation</a>
-            </div>
-            
-            <div class="code-preview">
-                <pre><code class="language-go">package main
+
+<div class="bar">
+  <span class="prompt">fest@arch<b>:~$</b></span>
+  <nav>
+    <a href="#why">why</a>
+    <a href="#features">features</a>
+    <a href="#example">example</a>
+    <a href="#install">install</a>
+    <a class="gh" href="https://github.com/emad-elsaid/fest">★ GitHub</a>
+  </nav>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="ribbon"><span class="dot-g"></span> immutable config · arch linux · go</div>
+    <div class="logo">fest<span class="cursor"></span></div>
+    <p class="kicker"><span class="tag">$</span> declarative, immutable system configuration for Arch Linux</p>
+    <p class="tagline">
+      All the power of declarative infrastructure, none of the complexity.
+      Describe your whole machine in <em>Go</em> — packages, services, files, users —
+      then sync any Arch box to match.
+    </p>
+    <div class="ctas">
+      <a class="btn primary" href="https://github.com/emad-elsaid/fest">Get Started</a>
+      <a class="btn" href="https://pkg.go.dev/github.com/emad-elsaid/fest">Documentation</a>
+    </div>
+
+    <div class="win">
+      <div class="win-head"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="win-title">~/mysystem/main.go — go</span></div>
+      <div class="win-body"><pre><code class="language-go">package main
 
 import "github.com/emad-elsaid/fest"
 
@@ -437,218 +257,93 @@ func main() {
     fest.Package("vim", "git", "docker", "firefox")
     fest.SystemService("docker")
     fest.Timedate("America/New_York", true)
-    
-    fest.Main()  // That's it. Seriously.
-}</code></pre>
-            </div>
-        </div>
-    </div>
-    
-    <section>
-        <h2>Why Choose Arch + Go Over NixOS?</h2>
-        
-        <div class="comparison-grid">
-            <div class="comparison-card winner">
-                <h3>Fest</h3>
-                <ul>
-                    <li><strong>Familiar Language:</strong> Use Go, not a custom DSL</li>
-                    <li><strong>Type Safety:</strong> Compiler catches errors before runtime</li>
-                    <li><strong>Zero Learning Curve:</strong> If you know Go, you're ready</li>
-                    <li><strong>Keep Your Distro:</strong> Stay on Arch Linux</li>
-                    <li><strong>Access to AUR:</strong> 80,000+ packages via yay</li>
-                    <li><strong>Pacman Speed:</strong> No rebuilding everything</li>
-                    <li><strong>Standard Tools:</strong> systemd, pacman, familiar workflows</li>
-                    <li><strong>Rolling Release:</strong> Always latest packages</li>
-                </ul>
-            </div>
-            
-            <div class="comparison-card">
-                <h3>NixOS</h3>
-                <ul>
-                    <li>Custom Nix language to learn</li>
-                    <li>Steep learning curve (weeks/months)</li>
-                    <li>Must switch entire distro</li>
-                    <li>Limited package repository compared to AUR</li>
-                    <li>Long rebuild times</li>
-                    <li>Non-standard filesystem layout</li>
-                    <li>Different package manager</li>
-                    <li>Reproducible, but complex</li>
-                </ul>
-            </div>
-        </div>
-        
-        <div class="why-section">
-            <h3>The Philosophy: Simplicity Meets Power</h3>
-            <p>
-                NixOS forces you to learn a new language, adopt a new distro, and rewire your mental model of Linux.
-                Fest gives you <strong>immutable infrastructure without the friction</strong>.
-            </p>
-            <p>
-                You already know Go. You already love Arch. Why compromise? Get declarative configuration, reproducible
-                systems, and version-controlled infrastructure—all while keeping the Arch Linux ecosystem you trust.
-            </p>
-        </div>
-        
-        <table class="comparison-table">
-            <thead>
-                <tr>
-                    <th>Feature</th>
-                    <th>Fest</th>
-                    <th>NixOS</th>
-                    <th>Ansible</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td><strong>Language</strong></td>
-                    <td><span class="check">✓</span> Go (mainstream)</td>
-                    <td>Nix (custom DSL)</td>
-                    <td>YAML (no type safety)</td>
-                </tr>
-                <tr>
-                    <td><strong>Type Safety</strong></td>
-                    <td><span class="check">✓</span> Full compiler validation</td>
-                    <td><span class="check">✓</span> Some type checking</td>
-                    <td><span class="cross">✗</span> Runtime errors only</td>
-                </tr>
-                <tr>
-                    <td><strong>Learning Curve</strong></td>
-                    <td><span class="check">✓</span> Low (standard Go)</td>
-                    <td><span class="cross">✗</span> High (new paradigm)</td>
-                    <td>Medium (YAML + modules)</td>
-                </tr>
-                <tr>
-                    <td><strong>Keep Your Distro</strong></td>
-                    <td><span class="check">✓</span> Works on Arch</td>
-                    <td><span class="cross">✗</span> Requires NixOS</td>
-                    <td><span class="check">✓</span> Distro-agnostic</td>
-                </tr>
-                <tr>
-                    <td><strong>AUR Access</strong></td>
-                    <td><span class="check">✓</span> Full 80,000+ packages</td>
-                    <td><span class="cross">✗</span> Limited compatibility</td>
-                    <td><span class="check">✓</span> Via manual tasks</td>
-                </tr>
-                <tr>
-                    <td><strong>Speed</strong></td>
-                    <td><span class="check">✓</span> Fast binary installs</td>
-                    <td>Slow (rebuilds/downloads)</td>
-                    <td>Medium (SSH overhead)</td>
-                </tr>
-                <tr>
-                    <td><strong>Single Binary</strong></td>
-                    <td><span class="check">✓</span> Compiled Go binary</td>
-                    <td><span class="cross">✗</span> System-level</td>
-                    <td><span class="cross">✗</span> Python + modules</td>
-                </tr>
-                <tr>
-                    <td><strong>Declarative Config</strong></td>
-                    <td><span class="check">✓</span> Full support</td>
-                    <td><span class="check">✓</span> Full support</td>
-                    <td><span class="check">✓</span> Idempotent playbooks</td>
-                </tr>
-                <tr>
-                    <td><strong>Reproducibility</strong></td>
-                    <td><span class="check">✓</span> Version-controlled</td>
-                    <td><span class="check">✓</span> Fully reproducible</td>
-                    <td>Depends on idempotency</td>
-                </tr>
-            </tbody>
-        </table>
-    </section>
-    
-    <section>
-        <h2>Key Features</h2>
-        
-        <div class="features-grid">
-            <div class="feature-card">
-                <span class="feature-icon">📦</span>
-                <h3>Unified Package Management</h3>
-                <p>
-                    Manage pacman, AUR, Flatpak, npm, Go packages, and Ruby gems from a single declarative configuration.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🔄</span>
-                <h3>Declarative Everything</h3>
-                <p>
-                    Services, timers, sockets, system files, user groups, dotfiles—declare it once, sync everywhere.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🛡️</span>
-                <h3>Type-Safe Configuration</h3>
-                <p>
-                    Go's compiler catches typos, missing imports, and logic errors before you run a single command.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">⚡</span>
-                <h3>Preview Changes</h3>
-                <p>
-                    <code>go run . diff</code> shows exactly what would change—no surprises, no accidents.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🧹</span>
-                <h3>Automatic Cleanup</h3>
-                <p>
-                    Tracks what it installed. Remove a package from config, it gets removed from your system.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🔗</span>
-                <h3>Dependency Aware</h3>
-                <p>
-                    Won't remove packages other wanted packages depend on. Intelligent dependency resolution.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">📝</span>
-                <h3>State Capture</h3>
-                <p>
-                    <code>go run . save</code> converts your current system state into Go code. Perfect for migrations.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🎯</span>
-                <h3>Lifecycle Hooks</h3>
-                <p>
-                    Run custom logic before/after specific resources sync. Full programmatic control.
-                </p>
-            </div>
 
-            <div class="feature-card">
-                <span class="feature-icon">⬆️</span>
-                <h3>One-Command Updates</h3>
-                <p>
-                    <code>go run . update</code> upgrades every package manager, skipping packages locked to a version.
-                </p>
-            </div>
-            
-            <div class="feature-card">
-                <span class="feature-icon">🤖</span>
-                <h3>LLM Agent Friendly</h3>
-                <p>
-                    Go's simplicity and excellent tooling make Fest perfect for AI-assisted system management.
-                    LLMs understand Go naturally and leverage its compiler, formatter, and test suite.
-                </p>
-            </div>
-        </div>
-    </section>
-    
-    <section>
-        <h2>Real-World Example</h2>
-        
-        <div class="code-preview">
-            <pre><code class="language-go">package main
+    fest.Main() // That's it. Seriously.
+}</code></pre></div>
+    </div>
+  </div>
+
+  <section id="why">
+    <div class="h2">why arch + go over nixos</div>
+
+    <div class="diff">
+      <div class="pane plus">
+        <div class="pane-head"><span class="who">Fest</span><span class="verdict">+8 additions</span></div>
+        <ul>
+          <li><strong>Familiar Language:</strong> use Go, not a custom DSL</li>
+          <li><strong>Type Safety:</strong> compiler catches errors first</li>
+          <li><strong>Zero Learning Curve:</strong> know Go, you're ready</li>
+          <li><strong>Keep Your Distro:</strong> stay on Arch Linux</li>
+          <li><strong>Access to AUR:</strong> 80,000+ packages via yay</li>
+          <li><strong>Pacman Speed:</strong> no rebuilding everything</li>
+          <li><strong>Standard Tools:</strong> systemd, pacman, familiar</li>
+          <li><strong>Rolling Release:</strong> always latest packages</li>
+        </ul>
+      </div>
+      <div class="pane minus">
+        <div class="pane-head"><span class="who">NixOS</span><span class="verdict">+8 removals</span></div>
+        <ul>
+          <li>Custom Nix language to learn</li>
+          <li>Steep learning curve (weeks/months)</li>
+          <li>Must switch entire distro</li>
+          <li>Limited repo compared to AUR</li>
+          <li>Long rebuild times</li>
+          <li>Non-standard filesystem layout</li>
+          <li>Different package manager</li>
+          <li>Reproducible, but complex</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note">
+      <p><strong>// the philosophy</strong></p>
+      <p>NixOS forces you to learn a new language, adopt a new distro, and rewire your mental model of Linux. Fest gives you immutable infrastructure without the friction.</p>
+      <p>You already know Go. You already love Arch. Why compromise? Get declarative configuration, reproducible systems, and version-controlled infrastructure — while keeping the Arch ecosystem you trust.</p>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Feature</th><th>Fest</th><th>NixOS</th><th>Ansible</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Language</td><td class="ok">✓ Go (mainstream)</td><td>Nix (custom DSL)</td><td>YAML (no types)</td></tr>
+          <tr><td>Type Safety</td><td class="ok">✓ Full compiler validation</td><td class="ok">✓ Some checking</td><td class="no">✗ Runtime only</td></tr>
+          <tr><td>Learning Curve</td><td class="ok">✓ Low (standard Go)</td><td class="no">✗ High (new paradigm)</td><td class="mid">Medium</td></tr>
+          <tr><td>Keep Your Distro</td><td class="ok">✓ Works on Arch</td><td class="no">✗ Requires NixOS</td><td class="ok">✓ Distro-agnostic</td></tr>
+          <tr><td>AUR Access</td><td class="ok">✓ Full 80,000+</td><td class="no">✗ Limited</td><td class="ok">✓ Via manual tasks</td></tr>
+          <tr><td>Speed</td><td class="ok">✓ Fast binary installs</td><td class="mid">Slow (rebuilds)</td><td class="mid">Medium (SSH)</td></tr>
+          <tr><td>Single Binary</td><td class="ok">✓ Compiled Go binary</td><td class="no">✗ System-level</td><td class="no">✗ Python + modules</td></tr>
+          <tr><td>Declarative Config</td><td class="ok">✓ Full support</td><td class="ok">✓ Full support</td><td class="ok">✓ Idempotent playbooks</td></tr>
+          <tr><td>Reproducibility</td><td class="ok">✓ Version-controlled</td><td class="ok">✓ Fully reproducible</td><td class="mid">Depends on idempotency</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="h2">key features</div>
+    <div class="grid">
+      <div class="card"><span class="ico">📦</span><h3>Unified Package Management</h3><p>Manage pacman, AUR, Flatpak, npm, Go packages and Ruby gems from a single declarative config.</p></div>
+      <div class="card"><span class="ico">🔄</span><h3>Declarative Everything</h3><p>Services, timers, sockets, system files, user groups, dotfiles — declare once, sync everywhere.</p></div>
+      <div class="card"><span class="ico">🛡️</span><h3>Type-Safe Configuration</h3><p>Go's compiler catches typos, missing imports and logic errors before you run a single command.</p></div>
+      <div class="card"><span class="ico">⚡</span><h3>Preview Changes</h3><p><code>go run . diff</code> shows exactly what would change — no surprises, no accidents.</p></div>
+      <div class="card"><span class="ico">🧹</span><h3>Automatic Cleanup</h3><p>Tracks what it installed. Remove a package from config, it gets removed from your system.</p></div>
+      <div class="card"><span class="ico">🔗</span><h3>Dependency Aware</h3><p>Won't remove packages that other wanted packages depend on. Intelligent resolution.</p></div>
+      <div class="card"><span class="ico">📝</span><h3>State Capture</h3><p><code>go run . save</code> converts current system state into Go code. Perfect for migrations.</p></div>
+      <div class="card"><span class="ico">🎯</span><h3>Lifecycle Hooks</h3><p>Run custom logic before/after specific resources sync. Full programmatic control.</p></div>
+      <div class="card"><span class="ico">⬆️</span><h3>One-Command Updates</h3><p><code>go run . update</code> upgrades every package manager, skipping version-locked packages.</p></div>
+      <div class="card"><span class="ico">🤖</span><h3>LLM Agent Friendly</h3><p>Go's simplicity and tooling make Fest perfect for AI-assisted system management and its compiler.</p></div>
+    </div>
+  </section>
+</div>
+
+<div class="wrap">
+  <section id="example">
+    <div class="h2">real-world example</div>
+    <div class="win">
+      <div class="win-head"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="win-title">main.go</span></div>
+      <div class="win-body"><pre><code class="language-go">package main
 
 import "github.com/emad-elsaid/fest"
 
@@ -658,57 +353,38 @@ func main() {
         "base-devel", "vim", "git", "htop",
         "docker", "kubectl", "terraform",
     )
-    
+
     // Development tools
-    fest.GoPackage(
-        "github.com/golangci/golangci-lint/cmd/golangci-lint@latest",
-    )
-    
-    fest.NpmPackage(
-        "typescript", "@vue/cli", "eslint",
-    )
-    
+    fest.GoPackage("github.com/golangci/golangci-lint/cmd/golangci-lint@latest")
+    fest.NpmPackage("typescript", "@vue/cli", "eslint")
+
     // Flatpak apps
-    fest.Flatpak(
-        "com.slack.Slack",
-        "us.zoom.Zoom",
-    )
-    
+    fest.Flatpak("com.slack.Slack", "us.zoom.Zoom")
+
     // System configuration
     fest.Timedate("America/New_York", true)
     fest.Locale("en_US.UTF-8 UTF-8")
-    
-    // Services
+
+    // Services & groups
     fest.SystemService("docker", "sshd")
     fest.Service("syncthing")
-    
-    // User groups
     fest.Group("docker", "wheel", "audio")
-    
+
     // System files (from system/ directory)
     fest.SystemFilesDir("system")
-    
-    // Custom hook: notify after docker install
-    fest.After(fest.ResourcePackages, func() {
-        // Your custom setup logic here
-    })
-    
+
     fest.Main()
-}</code></pre>
-        </div>
-        
-        <div class="highlight-box">
-            <strong>That's it.</strong> Commit this to git. Run <code>go run . apply</code> on any Arch machine.
-            Your entire system state is now reproducible, version-controlled, and portable.
-        </div>
-    </section>
-    
-    <section>
-        <h2>Install Fest in 60 Seconds</h2>
-        
-        <div class="code-preview">
-            <pre><code class="language-bash"># 1. Create your system configuration
-mkdir ~/mysystem && cd ~/mysystem
+}</code></pre></div>
+    </div>
+    <div class="hl">That's it. Commit to git, run <code>go run . apply</code> on any Arch machine. Your whole system state is now reproducible, version-controlled and portable.</div>
+  </section>
+
+  <section id="install">
+    <div class="h2">install in 60 seconds</div>
+    <div class="win">
+      <div class="win-head"><span class="dot d1"></span><span class="dot d2"></span><span class="dot d3"></span><span class="win-title">bash</span></div>
+      <div class="win-body"><pre><code class="language-bash"># 1. Create your system configuration
+mkdir ~/mysystem &amp;&amp; cd ~/mysystem
 go mod init mysystem
 go get github.com/emad-elsaid/fest
 
@@ -724,26 +400,26 @@ go run . apply
 go run . update
 
 # 6. Commit to git and deploy anywhere
-git init && git add . && git commit -m "Initial system config"</code></pre>
-        </div>
-        
-        <div class="cta-buttons" style="justify-content: center;">
-            <a href="https://github.com/emad-elsaid/fest" class="btn btn-primary">View on GitHub</a>
-            <a href="https://pkg.go.dev/github.com/emad-elsaid/fest" class="btn btn-secondary">Read the Docs</a>
-        </div>
-    </section>
-    
-    <footer>
-        <p>Built with <span style="color: #ff79c6;">♥</span> for the Arch Linux community</p>
-        <p style="margin-top: 1rem; font-size: 0.9rem;">
-            <a href="https://github.com/emad-elsaid/fest" style="color: var(--arch-blue); text-decoration: none;">GitHub</a> •
-            <a href="https://pkg.go.dev/github.com/emad-elsaid/fest" style="color: var(--arch-blue); text-decoration: none;">Documentation</a> •
-            <a href="https://github.com/emad-elsaid/fest/blob/master/LICENSE" style="color: var(--arch-blue); text-decoration: none;">License</a>
-        </p>
-    </footer>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+git init &amp;&amp; git add . &amp;&amp; git commit -m "Initial system config"</code></pre></div>
+    </div>
+    <div class="center-cta">
+      <a class="btn primary" href="https://github.com/emad-elsaid/fest">View on GitHub</a>
+      <a class="btn" href="https://pkg.go.dev/github.com/emad-elsaid/fest">Read the Docs</a>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <p>Built with <span class="heart">♥</span> for the Arch Linux community</p>
+  <div class="links">
+    <a href="https://github.com/emad-elsaid/fest">GitHub</a>
+    <a href="https://pkg.go.dev/github.com/emad-elsaid/fest">Documentation</a>
+    <a href="https://github.com/emad-elsaid/fest/blob/master/LICENSE">License</a>
+  </div>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-go.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
 </body>
 </html>
