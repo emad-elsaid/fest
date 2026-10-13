@@ -177,17 +177,40 @@ func (s systemConfigManager) ListInstalled() ([]string, error) {
 		}
 	}
 
-	// Check keyboard (simplified check)
+	// Check keyboard. localectl prints "VC Keymap: (unset)" and
+	// "X11 Layout: (unset)" when nothing is configured, so the mere presence of
+	// the labels must not count as configured.
 	if systemConfig.Keymap != "" || systemConfig.Layout != "" {
-		// Just mark as installed if any keyboard config exists
 		output, err := types.Cmd("localectl", "status").StdoutErr()
-		if err == nil && strings.Contains(output, "Keymap:") {
+		if err == nil && keyboardConfigured(output) {
 			installed = append(installed, "keyboard:configured")
 		}
 	}
 
 	return installed, nil
 }
+
+// keyboardConfigured reports whether localectl's status output already shows
+// the declared keyboard settings. localectl always prints the VC Keymap and
+// X11 Layout labels, using "(unset)" when nothing is configured, so the labels
+// alone are not evidence that the keyboard is set up.
+func keyboardConfigured(status string) bool {
+	keymap, layout := "", ""
+	for _, line := range strings.Split(status, "\n") {
+		line = strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(line, "VC Keymap:"); ok {
+			keymap = strings.TrimSpace(v)
+		}
+		if v, ok := strings.CutPrefix(line, "X11 Layout:"); ok {
+			layout = strings.TrimSpace(v)
+		}
+	}
+
+	isSet := func(v string) bool { return v != "" && v != "(unset)" }
+	return (systemConfig.Keymap == "" || isSet(keymap)) &&
+		(systemConfig.Layout == "" || isSet(layout))
+}
+
 func (s systemConfigManager) ListExplicit() ([]string, error) { return s.ListInstalled() }
 func (s systemConfigManager) Install(configs []string) error {
 	for _, cfg := range configs {

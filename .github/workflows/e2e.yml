@@ -1,0 +1,48 @@
+name: e2e
+
+# The end-to-end test boots a real Arch Linux VM with Vagrant + VirtualBox, so
+# it cannot run on GitHub-hosted runners (no hypervisor available). It targets a
+# self-hosted Linux runner with Vagrant, VirtualBox and the vboxdrv kernel
+# module loaded. See e2e/README.md.
+on:
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '**.go'
+      - 'go.mod'
+      - 'go.sum'
+      - 'e2e/**'
+      - '.github/workflows/e2e.yml'
+
+# Serialise runs so concurrent jobs on the same self-hosted runner do not fight
+# over VirtualBox and the Vagrant machine state.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, fest-e2e]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The test skips itself when Vagrant is missing (useful locally), so fail
+      # loudly here instead of reporting a green run that tested nothing.
+      - name: Check hypervisor prerequisites
+        run: |
+          vagrant --version
+          VBoxManage --version
+          test -e /dev/vboxdrv || {
+            echo "::error::/dev/vboxdrv is missing; load it with 'sudo modprobe vboxdrv'"
+            exit 1
+          }
+
+      - name: End-to-end test
+        run: go test -tags e2e -timeout 45m -v ./e2e/

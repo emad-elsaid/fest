@@ -235,6 +235,44 @@ func TestKeyboard_EmptyParametersHandled(t *testing.T) {
 	}
 }
 
+// TestKeyboardConfigured verifies the localectl status check distinguishes an
+// unset keymap/layout from a configured one.
+func TestKeyboardConfigured(t *testing.T) {
+	original := systemConfig
+	t.Cleanup(func() { systemConfig = original })
+
+	// Declare both a keymap and an X11 layout.
+	Keyboard("us", "us", "pc105", "", "")
+
+	tests := []struct {
+		name   string
+		status string
+		want   bool
+	}{
+		{
+			name:   "both unset",
+			status: "   System Locale: LANG=en_US.UTF-8\n       VC Keymap: (unset)\n      X11 Layout: (unset)\n",
+			want:   false,
+		},
+		{
+			name:   "keymap and layout set",
+			status: "       VC Keymap: us\n      X11 Layout: us\n",
+			want:   true,
+		},
+		{
+			name:   "keymap set but layout unset",
+			status: "       VC Keymap: us\n      X11 Layout: (unset)\n",
+			want:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, keyboardConfigured(tc.status))
+		})
+	}
+}
+
 // TestListInstalled_LocaleParsingCorrect verifies improved locale parsing
 func TestListInstalled_LocaleParsingCorrect(t *testing.T) {
 	tests := []struct {

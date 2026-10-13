@@ -19,9 +19,11 @@ func TestListInstalled_InconsistentErrorHandling(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	// Set to nonexistent user to trigger error
@@ -92,9 +94,11 @@ func TestInstall_NoGroupValidation(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	for _, tc := range tests {
@@ -125,9 +129,11 @@ func TestUninstall_NoGroupValidation(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	if originalUser == "" {
@@ -181,9 +187,11 @@ func TestInstall_NoUsernameValidation(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	// BUG: Username is not validated before being passed to command
@@ -219,9 +227,11 @@ func TestUninstall_NoUsernameValidation(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	os.Setenv("USER", "user;id")
@@ -282,9 +292,11 @@ func TestListInstalled_MissingUserEnv(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	os.Unsetenv("USER")
@@ -300,9 +312,11 @@ func TestInstall_MissingUserEnv(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	os.Unsetenv("USER")
@@ -318,9 +332,11 @@ func TestUninstall_MissingUserEnv(t *testing.T) {
 
 	originalUser := os.Getenv("USER")
 	defer func() {
-		if originalUser != "" {
-			os.Setenv("USER", originalUser)
+		if originalUser == "" {
+			os.Unsetenv("USER")
+			return
 		}
+		os.Setenv("USER", originalUser)
 	}()
 
 	os.Unsetenv("USER")

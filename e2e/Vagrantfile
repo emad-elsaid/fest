@@ -1,0 +1,35 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+# End-to-end test VM for fest.
+#
+# Boots a stock Arch Linux box; the test (e2e_test.go) uploads this repository
+# as a tarball, provision.sh unpacks it and installs fest's dependencies, and
+# then the test builds fest, applies a configuration and verifies the result.
+#
+# Drive it through the Go test (see e2e/README.md) so FEST_SRC_TARBALL points at
+# a tarball built from the working tree:
+#
+#   go test -tags e2e -timeout 45m -v ./e2e/
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/arch"
+  config.vm.hostname = "fest-e2e"
+
+  # The repository is pushed by the test as a tarball, so no shared folder is
+  # mounted. This keeps the test independent of VirtualBox guest additions.
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus = 2
+  end
+
+  config.vm.provision "file",
+    source: ENV.fetch("FEST_SRC_TARBALL", "/tmp/fest-e2e-src.tar.gz"),
+    destination: "/tmp/fest-e2e-src.tar.gz"
+
+  # privileged: false keeps HOME=/home/vagrant, where the test expects the
+  # unpacked repository; the script still uses sudo for the operations that
+  # need root.
+  config.vm.provision "shell", path: "provision.sh", privileged: false
+end

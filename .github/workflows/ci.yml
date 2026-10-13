@@ -1,0 +1,33 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # fest targets Arch Linux and links libalpm through cgo, so it cannot be
+    # built on the bare Ubuntu runner. Run everything in an Arch container.
+    container: archlinux:latest
+    steps:
+      - name: Install dependencies
+        run: pacman -Syu --noconfirm --needed base-devel go expac stow fd git
+
+      - uses: actions/checkout@v4
+
+      # The container runs as root while the checkout is owned by the runner
+      # user, which makes git refuse to read it ("dubious ownership"). Go's VCS
+      # stamping then fails the build.
+      - name: Allow git to read the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./...
