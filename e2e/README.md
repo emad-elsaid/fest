@@ -52,16 +52,11 @@ declaration in one has a matching assertion in the other. Keep them in sync.
 `archlinux` container (fest links libalpm via cgo, so it cannot build on the
 Ubuntu runner directly).
 
-`.github/workflows/e2e.yml` runs this end-to-end test, but only on a
-**self-hosted** runner: GitHub-hosted runners have no hypervisor, so VirtualBox
-cannot start a VM there. The job targets the runner label `fest-e2e`. The
-runner needs:
+This end-to-end test is **not** part of CI: it needs a hypervisor, so it has to
+run on a machine with Vagrant and VirtualBox installed and `vboxdrv` loaded. Run
+it manually:
 
-- Vagrant and VirtualBox installed
-- the `vboxdrv` kernel module loaded (`sudo modprobe vboxdrv`)
-- `/dev/vboxdrv` accessible to the runner user
-
-The workflow checks those prerequisites and fails if they are missing, rather
-than letting the test skip and report a false green. It also serialises runs so
-concurrent jobs do not fight over VirtualBox.
+```bash
+go test -tags e2e -timeout 45m -v ./e2e/
+```
 
