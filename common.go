@@ -175,7 +175,7 @@ func saveAsGoFile(filename, funcName string, items []string) error {
 		fmt.Fprintf(&b, "\t\t%q,\n", item)
 	}
 	b.WriteString("\t)\n}\n")
-	return os.WriteFile(filename, []byte(b.String()), 0644)
+	return os.WriteFile("save_"+filename, []byte(b.String()), 0644)
 }
 
 // listSystemdUnits returns enabled systemd units of the given type.
