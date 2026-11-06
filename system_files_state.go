@@ -31,8 +31,6 @@ type systemFilesState struct {
 func stateDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
-		// Fall back to the account's home directory so the state path stays
-		// absolute even when $HOME is unavailable.
 		if u, uerr := user.Current(); uerr == nil {
 			home = u.HomeDir
 		}
@@ -76,7 +74,44 @@ func saveState(state *systemFilesState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath(), data, 0644)
+
+	// Write-then-rename so an interrupted save can't truncate existing state.
+	tmp, err := os.CreateTemp(stateDir(), ".system-files-state-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+
+	if err := os.Rename(tmpPath, statePath()); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	// fsync parent dir so the rename itself is durable on crash.
+	if d, derr := os.Open(stateDir()); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
 
 func hashBytes(data []byte) string {
@@ -86,8 +121,7 @@ func hashBytes(data []byte) string {
 
 // backupFile saves original content to backup directory, returns relative backup path
 func backupFile(targetPath string, content []byte) (string, error) {
-	// Create relative path under backups dir (e.g., /etc/hosts -> backups/etc/hosts.backup)
-	relPath := targetPath[1:] + ".backup" // Strip leading / and add .backup
+	relPath := targetPath[1:] + ".backup"
 	backupPath := filepath.Join(backupsDir(), relPath)
 
 	if err := os.MkdirAll(filepath.Dir(backupPath), 0755); err != nil {
@@ -98,7 +132,6 @@ func backupFile(targetPath string, content []byte) (string, error) {
 		return "", err
 	}
 
-	// Return path relative to state dir for storage
 	return filepath.Join("backups", relPath), nil
 }
 
@@ -110,7 +143,6 @@ func restoreFile(targetPath, relBackupPath string) error {
 		return err
 	}
 
-	// Create parent directories if needed
 	dir := filepath.Dir(targetPath)
 	if err := types.Sudo("mkdir", "-p", dir).Error(); err != nil {
 		return err

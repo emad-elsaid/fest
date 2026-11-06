@@ -5,12 +5,12 @@ import "github.com/emad-elsaid/types"
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/manifoldco/promptui"
-	"github.com/samber/lo"
 )
 
 var (
@@ -28,7 +28,6 @@ var (
 //	fest.SystemFilesDir("system")  // Default
 //	fest.SystemFilesDir("custom-system-files")  // Additional directory
 func SystemFilesDir(dir string) {
-	// Deduplicate: only add if not already present
 	for _, existing := range systemFilesDirs {
 		if existing == dir {
 			return
@@ -57,27 +56,22 @@ func listSystemDirFiles() (map[string]string, error) {
 			continue
 		}
 
-		err := filepath.Walk(systemFilesDir, func(path string, info os.FileInfo, err error) error {
+		err := filepath.WalkDir(systemFilesDir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if info.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
 
-			// Get relative path from systemFilesDir
 			relPath, err := filepath.Rel(systemFilesDir, path)
 			if err != nil {
 				return err
 			}
 
-			// Target path is / + relPath
 			targetPath := "/" + relPath
 
-			// Track potential collision
 			targetToSources[targetPath] = append(targetToSources[targetPath], path)
-
-			// Later directories override earlier ones if same target path
 			files[path] = targetPath
 			return nil
 		})
@@ -87,7 +81,6 @@ func listSystemDirFiles() (map[string]string, error) {
 		}
 	}
 
-	// Warn about collisions
 	for target, sources := range targetToSources {
 		if len(sources) > 1 {
 			slog.Warn("Multiple source files target same destination (last one wins)",
@@ -102,13 +95,11 @@ type systemFiles struct{}
 
 func (s systemFiles) ResourceName() string { return "system-files" }
 func (s systemFiles) Wanted() []string {
-	var wanted []string
-
-	// Add files from system directory
 	dirFiles, err := listSystemDirFiles()
 	if err != nil {
 		slog.Warn("Failed to list system files directory", "error", err)
 	}
+	wanted := make([]string, 0, len(dirFiles))
 	for _, targetPath := range dirFiles {
 		wanted = append(wanted, targetPath)
 	}
@@ -117,13 +108,12 @@ func (s systemFiles) Wanted() []string {
 }
 func (s systemFiles) Match(want, have string) bool { return want == have }
 func (s systemFiles) ListInstalled() ([]string, error) {
-	var installed []string
-
-	// Check directory-based files
 	dirFiles, err := listSystemDirFiles()
 	if err != nil {
-		return installed, err
+		return nil, err
 	}
+
+	installed := make([]string, 0, len(dirFiles))
 
 	// Files we deployed whose source was since deleted from the system dirs
 	// can't be seen by the walk above. Read them back from state so they're
@@ -150,19 +140,16 @@ func (s systemFiles) ListInstalled() ([]string, error) {
 	}
 
 	for srcPath, targetPath := range dirFiles {
-		// Read source file content
 		srcContent, err := os.ReadFile(srcPath)
 		if err != nil {
 			continue
 		}
 
-		// Read target file content
 		targetContent, err := readFileWithSudo(targetPath)
 		if err != nil {
 			continue
 		}
 
-		// Compare contents exactly
 		if bytes.Equal(srcContent, targetContent) {
 			installed = append(installed, targetPath)
 		}
@@ -190,8 +177,13 @@ func (s systemFiles) Install(ops []string) error {
 		return err
 	}
 
+	targetToSrc := make(map[string]string, len(dirFiles))
+	for src, dst := range dirFiles {
+		targetToSrc[dst] = src
+	}
+
 	for _, targetPath := range ops {
-		srcPath, ok := lo.FindKey(dirFiles, targetPath)
+		srcPath, ok := targetToSrc[targetPath]
 		if !ok {
 			return fmt.Errorf("source file not found for target: %s", targetPath)
 		}
@@ -206,13 +198,10 @@ func (s systemFiles) Install(ops []string) error {
 			return fmt.Errorf("failed to read source file %s: %w", srcPath, err)
 		}
 
-		// Track state before modification
 		entry, tracked := state.Files[targetPath]
 		if !tracked {
-			// First time managing this file
 			entry = fileState{}
 			if currentContent, readErr := readFileWithSudo(targetPath); readErr == nil {
-				// File exists - backup it
 				entry.OriginalExists = true
 				entry.OriginalHash = hashBytes(currentContent)
 				if backupPath, backupErr := backupFile(targetPath, currentContent); backupErr == nil {
@@ -222,7 +211,6 @@ func (s systemFiles) Install(ops []string) error {
 				}
 			}
 		} else {
-			// Check for external modifications
 			if currentContent, readErr := readFileWithSudo(targetPath); readErr == nil {
 				currentHash := hashBytes(currentContent)
 				if currentHash != entry.InstalledHash && currentHash != entry.OriginalHash {
@@ -241,30 +229,29 @@ func (s systemFiles) Install(ops []string) error {
 			}
 		}
 
-		// Create parent directories
+		slog.Debug("Copying " + srcPath + " → " + targetPath)
+		perm := fmt.Sprintf("%o", srcInfo.Mode().Perm())
 		dir := filepath.Dir(targetPath)
+
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			if os.IsPermission(err) {
-				if mkdirErr := types.Sudo("mkdir", "-p", dir).Interactive().Error(); mkdirErr != nil {
-					return mkdirErr
-				}
-			} else {
-				return err
+			if !os.IsPermission(err) {
+				return fmt.Errorf("failed to create parent dir %s: %w", dir, err)
+			}
+			if err := types.Sudo("mkdir", "-p", dir).Error(); err != nil {
+				return fmt.Errorf("failed to create parent dir %s: %w", dir, err)
 			}
 		}
-
-		slog.Debug("Copying " + srcPath + " → " + targetPath)
-		if err := types.Sudo("tee", targetPath).Input(string(content)).Error(); err != nil {
-			return err
+		if err := types.Sudo("install", "-m", perm, srcPath, targetPath).Error(); err != nil {
+			return fmt.Errorf("failed to install %s: %w", targetPath, err)
 		}
 
-		perm := srcInfo.Mode().Perm()
-		if err := types.Sudo("chmod", fmt.Sprintf("%o", perm), targetPath).Error(); err != nil {
-			return fmt.Errorf("failed to set permissions on %s: %w", targetPath, err)
+		if installed, readErr := readFileWithSudo(targetPath); readErr == nil {
+			entry.InstalledHash = hashBytes(installed)
+		} else {
+			slog.Warn("Could not verify installed content; recording pre-install hash",
+				"path", targetPath, "error", readErr)
+			entry.InstalledHash = hashBytes(content)
 		}
-
-		// Update state
-		entry.InstalledHash = hashBytes(content)
 		entry.InstalledAt = nowRFC3339()
 		state.Files[targetPath] = entry
 	}
@@ -294,6 +281,8 @@ func (s systemFiles) Uninstall(ops []string) error {
 		return nil
 	}
 
+	toDelete := make([]string, 0, len(ops))
+
 	for _, targetPath := range ops {
 		entry, tracked := state.Files[targetPath]
 		if !tracked {
@@ -302,23 +291,36 @@ func (s systemFiles) Uninstall(ops []string) error {
 		}
 
 		if entry.OriginalExists && entry.BackupPath != "" {
-			// Restore original
 			if err := restoreFile(targetPath, entry.BackupPath); err != nil {
 				slog.Warn("Failed to restore", "path", targetPath, "error", err)
 				continue
 			}
 			slog.Info("Restored original", "path", targetPath)
 			deleteBackup(entry.BackupPath)
+			delete(state.Files, targetPath)
 		} else {
-			// Delete (we created it)
-			if err := types.Sudo("rm", "-f", targetPath).Error(); err != nil {
-				slog.Warn("Failed to delete", "path", targetPath, "error", err)
+			toDelete = append(toDelete, targetPath)
+		}
+	}
+
+	if len(toDelete) > 0 {
+		const rmBatch = 100
+		for i := 0; i < len(toDelete); i += rmBatch {
+			end := i + rmBatch
+			if end > len(toDelete) {
+				end = len(toDelete)
+			}
+			batch := toDelete[i:end]
+			args := append([]string{"rm", "-f"}, batch...)
+			if err := types.Sudo(args...).Error(); err != nil {
+				slog.Warn("Failed to delete files", "error", err, "count", len(batch))
 				continue
 			}
-			slog.Info("Deleted", "path", targetPath)
+			for _, path := range batch {
+				slog.Info("Deleted", "path", path)
+				delete(state.Files, path)
+			}
 		}
-
-		delete(state.Files, targetPath)
 	}
 
 	if err := saveState(state); err != nil {
