@@ -323,24 +323,9 @@ func (s systemFiles) Uninstall(ops []string) error {
 		}
 	}
 
-	if len(toDelete) > 0 {
-		const rmBatch = 100
-		for i := 0; i < len(toDelete); i += rmBatch {
-			end := i + rmBatch
-			if end > len(toDelete) {
-				end = len(toDelete)
-			}
-			batch := toDelete[i:end]
-			// Delete (we created it)
-			if err := types.Sudo("rm", append([]string{"-f"}, batch...)...).Error(); err != nil {
-				slog.Warn("Failed to delete files", "error", err, "count", len(batch))
-				continue
-			}
-			for _, path := range batch {
-				slog.Info("Deleted", "path", path)
-				delete(state.Files, path)
-			}
-		}
+	for _, path := range deleteInBatches(toDelete) {
+		slog.Info("Deleted", "path", path)
+		delete(state.Files, path)
 	}
 
 	if err := saveState(state); err != nil {
@@ -348,6 +333,29 @@ func (s systemFiles) Uninstall(ops []string) error {
 	}
 	return nil
 }
+
+// deleteInBatches removes the given paths with rm -f, splitting them into
+// batches to stay under the OS argument-length limit (ARG_MAX). Batches that
+// fail are logged and skipped; the successfully deleted paths are returned so
+// the caller can update its state.
+func deleteInBatches(paths []string) []string {
+	const rmBatch = 100
+	deleted := make([]string, 0, len(paths))
+	for i := 0; i < len(paths); i += rmBatch {
+		end := i + rmBatch
+		if end > len(paths) {
+			end = len(paths)
+		}
+		batch := paths[i:end]
+		if err := types.Sudo("rm", append([]string{"-f"}, batch...)...).Error(); err != nil {
+			slog.Warn("Failed to delete files", "error", err, "count", len(batch))
+			continue
+		}
+		deleted = append(deleted, batch...)
+	}
+	return deleted
+}
+
 func (s systemFiles) MarkExplicit(ops []string) error { return nil }
 func (s systemFiles) Update() error                   { return nil }
 
