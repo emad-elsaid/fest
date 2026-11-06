@@ -311,8 +311,7 @@ func (s systemFiles) Uninstall(ops []string) error {
 				end = len(toDelete)
 			}
 			batch := toDelete[i:end]
-			args := append([]string{"rm", "-f"}, batch...)
-			if err := types.Sudo(args...).Error(); err != nil {
+			if err := types.Sudo("rm", append([]string{"-f"}, batch...)...).Error(); err != nil {
 				slog.Warn("Failed to delete files", "error", err, "count", len(batch))
 				continue
 			}
