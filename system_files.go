@@ -28,6 +28,7 @@ var (
 //	fest.SystemFilesDir("system")  // Default
 //	fest.SystemFilesDir("custom-system-files")  // Additional directory
 func SystemFilesDir(dir string) {
+	// Deduplicate: only add if not already present
 	for _, existing := range systemFilesDirs {
 		if existing == dir {
 			return
@@ -64,14 +65,19 @@ func listSystemDirFiles() (map[string]string, error) {
 				return nil
 			}
 
+			// Get relative path from systemFilesDir
 			relPath, err := filepath.Rel(systemFilesDir, path)
 			if err != nil {
 				return err
 			}
 
+			// Target path is / + relPath
 			targetPath := "/" + relPath
 
+			// Track potential collision
 			targetToSources[targetPath] = append(targetToSources[targetPath], path)
+
+			// Later directories override earlier ones if same target path
 			files[path] = targetPath
 			return nil
 		})
@@ -81,6 +87,7 @@ func listSystemDirFiles() (map[string]string, error) {
 		}
 	}
 
+	// Warn about collisions
 	for target, sources := range targetToSources {
 		if len(sources) > 1 {
 			slog.Warn("Multiple source files target same destination (last one wins)",
@@ -108,6 +115,8 @@ func (s systemFiles) Wanted() []string {
 }
 func (s systemFiles) Match(want, have string) bool { return want == have }
 func (s systemFiles) ListInstalled() ([]string, error) {
+	// Check directory-based files
+
 	dirFiles, err := listSystemDirFiles()
 	if err != nil {
 		return nil, err
@@ -140,16 +149,19 @@ func (s systemFiles) ListInstalled() ([]string, error) {
 	}
 
 	for srcPath, targetPath := range dirFiles {
+		// Read source file content
 		srcContent, err := os.ReadFile(srcPath)
 		if err != nil {
 			continue
 		}
 
+		// Read target file content
 		targetContent, err := readFileWithSudo(targetPath)
 		if err != nil {
 			continue
 		}
 
+		// Compare contents exactly
 		if bytes.Equal(srcContent, targetContent) {
 			installed = append(installed, targetPath)
 		}
@@ -198,10 +210,14 @@ func (s systemFiles) Install(ops []string) error {
 			return fmt.Errorf("failed to read source file %s: %w", srcPath, err)
 		}
 
+		// Track state before modification
+
 		entry, tracked := state.Files[targetPath]
 		if !tracked {
+			// First time managing this file
 			entry = fileState{}
 			if currentContent, readErr := readFileWithSudo(targetPath); readErr == nil {
+				// File exists - backup it
 				entry.OriginalExists = true
 				entry.OriginalHash = hashBytes(currentContent)
 				if backupPath, backupErr := backupFile(targetPath, currentContent); backupErr == nil {
@@ -211,6 +227,7 @@ func (s systemFiles) Install(ops []string) error {
 				}
 			}
 		} else {
+			// Check for external modifications
 			if currentContent, readErr := readFileWithSudo(targetPath); readErr == nil {
 				currentHash := hashBytes(currentContent)
 				if currentHash != entry.InstalledHash && currentHash != entry.OriginalHash {
@@ -229,6 +246,7 @@ func (s systemFiles) Install(ops []string) error {
 			}
 		}
 
+		// Create parent directories
 		slog.Debug("Copying " + srcPath + " → " + targetPath)
 		perm := fmt.Sprintf("%o", srcInfo.Mode().Perm())
 		dir := filepath.Dir(targetPath)
@@ -252,6 +270,7 @@ func (s systemFiles) Install(ops []string) error {
 				"path", targetPath, "error", readErr)
 			entry.InstalledHash = hashBytes(content)
 		}
+		// Update state
 		entry.InstalledAt = nowRFC3339()
 		state.Files[targetPath] = entry
 	}
@@ -291,6 +310,7 @@ func (s systemFiles) Uninstall(ops []string) error {
 		}
 
 		if entry.OriginalExists && entry.BackupPath != "" {
+			// Restore original
 			if err := restoreFile(targetPath, entry.BackupPath); err != nil {
 				slog.Warn("Failed to restore", "path", targetPath, "error", err)
 				continue
@@ -311,6 +331,7 @@ func (s systemFiles) Uninstall(ops []string) error {
 				end = len(toDelete)
 			}
 			batch := toDelete[i:end]
+			// Delete (we created it)
 			if err := types.Sudo("rm", append([]string{"-f"}, batch...)...).Error(); err != nil {
 				slog.Warn("Failed to delete files", "error", err, "count", len(batch))
 				continue

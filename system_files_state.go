@@ -31,6 +31,8 @@ type systemFilesState struct {
 func stateDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
+		// Fall back to the account's home directory so the state path stays
+		// absolute even when $HOME is unavailable.
 		if u, uerr := user.Current(); uerr == nil {
 			home = u.HomeDir
 		}
@@ -121,7 +123,8 @@ func hashBytes(data []byte) string {
 
 // backupFile saves original content to backup directory, returns relative backup path
 func backupFile(targetPath string, content []byte) (string, error) {
-	relPath := targetPath[1:] + ".backup"
+	// Create relative path under backups dir (e.g., /etc/hosts -> backups/etc/hosts.backup)
+	relPath := targetPath[1:] + ".backup" // Strip leading / and add .backup
 	backupPath := filepath.Join(backupsDir(), relPath)
 
 	if err := os.MkdirAll(filepath.Dir(backupPath), 0755); err != nil {
@@ -132,6 +135,7 @@ func backupFile(targetPath string, content []byte) (string, error) {
 		return "", err
 	}
 
+	// Return path relative to state dir for storage
 	return filepath.Join("backups", relPath), nil
 }
 
@@ -143,6 +147,7 @@ func restoreFile(targetPath, relBackupPath string) error {
 		return err
 	}
 
+	// Create parent directories if needed
 	dir := filepath.Dir(targetPath)
 	if err := types.Sudo("mkdir", "-p", dir).Error(); err != nil {
 		return err
