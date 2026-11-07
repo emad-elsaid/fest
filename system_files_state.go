@@ -76,7 +76,47 @@ func saveState(state *systemFilesState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(statePath(), data, 0644)
+
+	// Write-then-rename so an interrupted save can't truncate existing state.
+	tmp, err := os.CreateTemp(stateDir(), ".system-files-state-")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+
+	success := false
+	defer func() {
+		if !success {
+			_ = os.Remove(tmpPath)
+		}
+	}()
+
+	defer tmp.Close()
+
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(0644); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, statePath()); err != nil {
+		return err
+	}
+	success = true
+
+	// fsync parent dir so the rename itself is durable on crash.
+	if d, derr := os.Open(stateDir()); derr == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
 
 func hashBytes(data []byte) string {
