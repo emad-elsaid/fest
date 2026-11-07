@@ -255,7 +255,7 @@ func (s systemFiles) Install(ops []string) error {
 			if !os.IsPermission(err) {
 				return fmt.Errorf("failed to create parent dir %s: %w", dir, err)
 			}
-			if err := types.Sudo("mkdir", "-p", dir).Error(); err != nil {
+			if err := types.Sudo("mkdir", "-p", dir).Interactive().Error(); err != nil {
 				return fmt.Errorf("failed to create parent dir %s: %w", dir, err)
 			}
 		}
