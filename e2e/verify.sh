@@ -46,7 +46,7 @@ check_group "vagrant joined video group" vagrant video
 check "managed system file content" "$(cat /etc/fest-e2e.conf 2>/dev/null)" "managed by fest e2e"
 check "managed system file mode"    "$(stat -c %a /etc/fest-e2e.conf 2>/dev/null)" "644"
 
-# --- dotfiles (stow, the user/ tree) ---
+# --- dotfiles (stow subpackage, the user/ tree) ---
 check "dotfile content" "$(cat "$HOME/.fest-e2e-dotfile" 2>/dev/null)" "managed by fest e2e"
 check "dotfile is a stow symlink" "$(readlink -f "$HOME/.fest-e2e-dotfile" 2>/dev/null)" \
   "$HOME/fest/e2e/config/user/.fest-e2e-dotfile"

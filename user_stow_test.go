@@ -8,41 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Bug 1: parseApplyConflicts regex stops at newlines (uses .+ which doesn't match \n)
-func TestUserStow_ParseApplyConflicts_SpecialCharacters(t *testing.T) {
-	tests := []struct {
-		name     string
-		output   string
-		expected []string
-	}{
-		{
-			name:     "file path with spaces",
-			output:   "cannot stow something over existing target /home/user/My Documents/.bashrc since target exists",
-			expected: []string{"/home/user/My Documents/.bashrc"},
-		},
-		{
-			name:     "file path with parentheses",
-			output:   "cannot stow something over existing target /home/user/.config/app (x86)/.conf since target exists",
-			expected: []string{"/home/user/.config/app (x86)/.conf"},
-		},
-		{
-			name: "embedded newline is not part of a path",
-			// Paths are single-line; a newline begins a new stow record.
-			output:   "cannot stow something over existing target /home/user/.file\nwith\nnewline since target exists",
-			expected: []string{},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			u := newUserStow()
-			result := u.parseApplyConflicts(tc.output)
-			require.Equal(t, tc.expected, result, "Should handle special characters in paths")
-		})
-	}
-}
-
-// Bug 2: getDirs resolves symlinks via os.Getwd()
+// getDirs must preserve a symlinked working directory instead of resolving it.
 func TestUserStow_GetDirs_SymlinkWorkingDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	symlinkPath := filepath.Join(tmpDir, "dotfiles-link")
@@ -52,174 +18,223 @@ func TestUserStow_GetDirs_SymlinkWorkingDir(t *testing.T) {
 	require.NoError(t, os.Symlink(actualPath, symlinkPath))
 
 	originalWd, _ := os.Getwd()
-	defer os.Chdir(originalWd)
+	t.Cleanup(func() { _ = os.Chdir(originalWd) })
 
 	originalPWD := os.Getenv("PWD")
-	defer os.Setenv("PWD", originalPWD)
+	t.Cleanup(func() { _ = os.Setenv("PWD", originalPWD) })
+	originalHome := os.Getenv("HOME")
+	t.Cleanup(func() { _ = os.Setenv("HOME", originalHome) })
 
 	require.NoError(t, os.Chdir(symlinkPath))
 	require.NoError(t, os.Setenv("PWD", symlinkPath))
+	require.NoError(t, os.Setenv("HOME", actualPath))
 
 	u := newUserStow()
-	dotfilesDir, stowDir, _, err := u.getDirs()
+	dotfilesDir, targetDir, err := u.getDirs()
 	require.NoError(t, err)
-
-	// Fixed: os.Getenv("PWD") preserves symlinks
 	require.Equal(t, symlinkPath, dotfilesDir, "getDirs should preserve symlink path")
-
-	expectedStow := filepath.Join(symlinkPath, "user")
-	require.Equal(t, expectedStow, stowDir, "stowDir should be relative to unresolved path")
+	require.Equal(t, actualPath, targetDir)
 }
 
-// Bug 3: parseApplyConflicts requires "since" suffix, truncated output is missed
-func TestUserStow_ParseApplyConflicts_TruncatedOutput(t *testing.T) {
-	tests := []struct {
-		name   string
-		output string
-	}{
-		{
-			name:   "output truncated mid-path",
-			output: "cannot stow something over existing target /home/user/.bash",
-		},
-		{
-			name:   "missing 'since' suffix",
-			output: "cannot stow something over existing target /home/user/.bashrc",
-		},
-	}
+// withDotfilesEnv points PWD and HOME at a temporary dotfiles tree and returns
+// the dotfiles directory and home directory.
+func withDotfilesEnv(t *testing.T) (dotfilesDir, homeDir string) {
+	t.Helper()
+	root := t.TempDir()
+	dotfilesDir = filepath.Join(root, "dotfiles")
+	homeDir = filepath.Join(root, "home")
+	require.NoError(t, os.MkdirAll(filepath.Join(dotfilesDir, "user"), 0755))
+	require.NoError(t, os.MkdirAll(homeDir, 0755))
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			u := newUserStow()
-			result := u.parseApplyConflicts(tc.output)
-			// Bug: regex requires "since" at end, so truncated output returns empty
-			// Real conflicts are missed, Apply proceeds without user interaction
-			require.Empty(t, result, "Truncated output causes missed conflicts")
-		})
-	}
+	t.Setenv("PWD", dotfilesDir)
+	t.Setenv("HOME", homeDir)
+	return dotfilesDir, homeDir
 }
 
-// parseConflicts captures a single path per conflict line; trailing text after
-// the newline is not part of the path.
-func TestUserStow_ParseConflicts_StopsAtNewline(t *testing.T) {
-	output := "existing target is not owned by stow: /home/user/.file\nwith\nnewline"
+func TestUserStow_ApplySymlinksDotfiles(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
 
-	u := newUserStow()
-	result := u.parseConflicts(output)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".bashrc"),
+		[]byte("export FOO=1\n"), 0644,
+	))
 
-	expected := []string{"/home/user/.file"}
-	require.Equal(t, expected, result, "Path should stop at the newline")
+	require.NoError(t, newUserStow().Apply())
+
+	linkPath := filepath.Join(homeDir, ".bashrc")
+	info, err := os.Lstat(linkPath)
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
+
+	content, err := os.ReadFile(linkPath)
+	require.NoError(t, err)
+	require.Equal(t, "export FOO=1\n", string(content))
+
+	// Applying twice is idempotent.
+	require.NoError(t, newUserStow().Apply())
 }
 
-// Bug 5: showDiff uses os.Stat which follows symlinks
-func TestUserStow_ShowDiff_FollowsSymlinks(t *testing.T) {
+func TestUserStow_ApplyKeepsExistingTargetWhenNoOverrideNeeded(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dotfilesDir, "user", ".config", "nvim"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".config", "nvim", "init.lua"),
+		[]byte("set number\n"), 0644,
+	))
+
+	require.NoError(t, newUserStow().Apply())
+
+	content, err := os.ReadFile(filepath.Join(homeDir, ".config", "nvim", "init.lua"))
+	require.NoError(t, err)
+	require.Equal(t, "set number\n", string(content))
+}
+
+func TestUserStow_SaveAdoptsFiles(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".bashrc"),
+		[]byte("stowed version\n"), 0644,
+	))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(homeDir, ".bashrc"),
+		[]byte("edited in home\n"), 0644,
+	))
+
+	require.NoError(t, newUserStow().Save())
+
+	// The home edit is adopted into the dotfile tree...
+	adopted, err := os.ReadFile(filepath.Join(dotfilesDir, "user", ".bashrc"))
+	require.NoError(t, err)
+	require.Equal(t, "edited in home\n", string(adopted))
+
+	// ...and the home path becomes a symlink to it.
+	info, err := os.Lstat(filepath.Join(homeDir, ".bashrc"))
+	require.NoError(t, err)
+	require.NotZero(t, info.Mode()&os.ModeSymlink)
+
+	// Saving again is a no-op.
+	require.NoError(t, newUserStow().Save())
+}
+
+func TestUserStow_DiffDoesNotChangeHome(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".vimrc"),
+		[]byte("set relativenumber\n"), 0644,
+	))
+
+	require.NoError(t, newUserStow().Diff())
+
+	_, err := os.Lstat(filepath.Join(homeDir, ".vimrc"))
+	require.ErrorIs(t, err, os.ErrNotExist)
+}
+
+// showDiff must not attempt to diff directories; it should report and return.
+func TestUserStow_ShowDiff_Directories(t *testing.T) {
 	tmpDir := t.TempDir()
-	stowDir := filepath.Join(tmpDir, "stow")
-	targetDir := filepath.Join(tmpDir, "target")
+	stowPath := filepath.Join(tmpDir, "stow-dir")
+	targetPath := filepath.Join(tmpDir, "target-dir")
 
-	require.NoError(t, os.MkdirAll(stowDir, 0755))
-	require.NoError(t, os.MkdirAll(targetDir, 0755))
+	require.NoError(t, os.MkdirAll(stowPath, 0755))
+	require.NoError(t, os.MkdirAll(targetPath, 0755))
 
-	// Create stow file
-	stowFile := filepath.Join(stowDir, "config.txt")
-	require.NoError(t, os.WriteFile(stowFile, []byte("stow content"), 0644))
-
-	// Target is a symlink to another file
-	actualTarget := filepath.Join(tmpDir, "other.txt")
-	require.NoError(t, os.WriteFile(actualTarget, []byte("other content"), 0644))
-
-	targetFile := filepath.Join(targetDir, "config.txt")
-	require.NoError(t, os.Symlink(actualTarget, targetFile))
-
-	// Verify symlink exists
-	info, err := os.Lstat(targetFile)
-	require.NoError(t, err)
-	require.NotEqual(t, 0, info.Mode()&os.ModeSymlink, "target should be a symlink")
-
-	u := newUserStow()
-	err = u.showDiff(targetFile, stowFile)
-	require.NoError(t, err)
-
-	// Bug: os.Stat follows symlinks, so we can't detect that target is a symlink
-	// The diff compares stowFile with actualTarget content, not the symlink itself
-	// Expected: should use Lstat to detect and warn about symlinks
-	// Actual: silently follows symlink and diffs wrong file
+	require.NoError(t, newUserStow().showDiff(targetPath, stowPath))
 }
 
-// Bug 6: parseApplyConflicts doesn't validate that capture group exists
-func TestUserStow_ParseApplyConflicts_MissingCaptureGroup(t *testing.T) {
-	// While the regex pattern has a capture group (.+), if stow changes its output
-	// format, we could match the outer pattern but not have a valid capture
+// showDiff on a target that does not exist in the stow tree yet is not an error.
+func TestUserStow_ShowDiff_MissingStowFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	stowPath := filepath.Join(tmpDir, "missing")
+	targetPath := filepath.Join(tmpDir, "target")
+	require.NoError(t, os.WriteFile(targetPath, []byte("x"), 0644))
 
-	// This test demonstrates the fragility - any change to stow output breaks silently
-	tests := []struct {
-		name   string
-		output string
-	}{
-		{
-			name:   "stow v3.0 hypothetical format change",
-			output: "CONFLICT: /home/user/.bashrc (target exists)",
-		},
-		{
-			name:   "stow error message change",
-			output: "ERROR: cannot install to /home/user/.bashrc: file exists",
-		},
-	}
+	require.NoError(t, newUserStow().showDiff(targetPath, stowPath))
+}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			u := newUserStow()
-			conflicts := u.parseApplyConflicts(tc.output)
+// options must keep Diff and Apply in sync, and enable adoption only for Save.
+func TestUserStow_Options(t *testing.T) {
+	u := newUserStow()
 
-			// Bug: returns empty for unrecognized format
-			// Apply() proceeds without conflict resolution, using --override=.*
-			// which might overwrite user files unexpectedly
-			require.Empty(t, conflicts, "Unrecognized format returns empty, no error raised")
-		})
+	apply := u.options("/dotfiles", "/home", false)
+	require.Equal(t, "/dotfiles", apply.StowDir)
+	require.Equal(t, "/home", apply.TargetDir)
+	require.False(t, apply.Adopt)
+	require.NotEmpty(t, apply.Override, "Apply replaces links owned by other packages")
+
+	save := u.options("/dotfiles", "/home", true)
+	require.True(t, save.Adopt)
+}
+
+// chooseStub records the offered items and returns a fixed choice.
+func chooseStub(offered *[]string, choice string) func(string, []string) (string, error) {
+	return func(_ string, items []string) (string, error) {
+		*offered = append([]string(nil), items...)
+		return choice, nil
 	}
 }
 
-// Real stow output for `stow --adopt --simulate -d <dotfiles> -t <home> user`
-// when targets are not owned by stow (see /usr/bin/stow: "All operations aborted.").
-//
-// parseConflicts must extract one path per conflict line. The current greedy
-// `(?s:.+)` capture runs past the end of the line and swallows the trailing
-// summary text (and any following conflict lines).
-func TestUserStowBugParseConflictsSingleLine(t *testing.T) {
+func TestUserStow_ApplyOverwriteForeignSymlink(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".zshrc"), []byte("stow\n"), 0644))
+
+	foreign := filepath.Join(filepath.Dir(dotfilesDir), "foreign")
+	require.NoError(t, os.WriteFile(foreign, []byte("foreign\n"), 0644))
+	require.NoError(t, os.Symlink(foreign, filepath.Join(homeDir, ".zshrc")))
+
 	u := newUserStow()
+	var offered []string
+	u.choose = chooseStub(&offered, "Overwrite")
 
-	output := "WARNING! stowing user would cause conflicts:\n" +
-		"  * existing target is not owned by stow: .bashrc\n" +
-		"All operations aborted.\n"
+	require.NoError(t, u.Apply())
+	require.Contains(t, offered, "Overwrite")
 
-	got := u.parseConflicts(output)
-	require.Equal(t, []string{".bashrc"}, got)
+	content, err := os.ReadFile(filepath.Join(homeDir, ".zshrc"))
+	require.NoError(t, err)
+	require.Equal(t, "stow\n", string(content))
 }
 
-func TestUserStowBugParseConflictsMultipleLines(t *testing.T) {
+func TestUserStow_ApplyKeepsForeignSymlink(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", ".zshrc"), []byte("stow\n"), 0644))
+
+	foreign := filepath.Join(filepath.Dir(dotfilesDir), "foreign")
+	require.NoError(t, os.WriteFile(foreign, []byte("foreign\n"), 0644))
+	require.NoError(t, os.Symlink(foreign, filepath.Join(homeDir, ".zshrc")))
+
 	u := newUserStow()
+	var offered []string
+	u.choose = chooseStub(&offered, "Keep target")
 
-	output := "WARNING! stowing user would cause conflicts:\n" +
-		"  * existing target is not owned by stow: .bashrc\n" +
-		"  * existing target is not owned by stow: .vimrc\n" +
-		"All operations aborted.\n"
+	require.NoError(t, u.Apply())
 
-	got := u.parseConflicts(output)
-	require.Equal(t, []string{".bashrc", ".vimrc"}, got)
+	link, err := os.Readlink(filepath.Join(homeDir, ".zshrc"))
+	require.NoError(t, err)
+	require.Equal(t, foreign, link)
 }
 
-// Real stow output for `stow --simulate -d <dotfiles> -t <home> user` when a
-// target exists and is neither a link nor a directory.
-//
-// The greedy first `(?s:.+)` makes the regex skip every conflict but the last:
-// it consumes up to the final " over existing target " in the whole output.
-func TestUserStowBugParseApplyConflictsMultipleLines(t *testing.T) {
+// Overwriting is not offered when the conflict target is a directory, since
+// that would require deleting a whole tree.
+func TestUserStow_ApplyDoesNotOfferOverwriteForDirectories(t *testing.T) {
+	dotfilesDir, homeDir := withDotfilesEnv(t)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(dotfilesDir, "user", "bin"), []byte("not a dir\n"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Join(homeDir, "bin"), 0755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(homeDir, "bin", "tool"), []byte("tool\n"), 0644))
+
 	u := newUserStow()
+	var offered []string
+	u.choose = chooseStub(&offered, "Keep target")
 
-	output := "WARNING! stowing user would cause conflicts:\n" +
-		"  * cannot stow user/.bashrc over existing target .bashrc since neither a link nor a directory and --adopt not specified\n" +
-		"  * cannot stow user/.vimrc over existing target .vimrc since neither a link nor a directory and --adopt not specified\n" +
-		"All operations aborted.\n"
+	require.NoError(t, u.Apply())
+	require.Equal(t, []string{"Show diff", "Keep target"}, offered)
 
-	got := u.parseApplyConflicts(output)
-	require.Equal(t, []string{".bashrc", ".vimrc"}, got)
+	content, err := os.ReadFile(filepath.Join(homeDir, "bin", "tool"))
+	require.NoError(t, err)
+	require.Equal(t, "tool\n", string(content))
 }

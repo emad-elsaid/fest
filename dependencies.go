@@ -36,9 +36,6 @@ var dependencies = []dependency{
 	// Build tools (critical for this program)
 	{Name: "go", PackageName: "go", Required: true},
 
-	// Dotfile management (critical)
-	{Name: "stow", PackageName: "stow", Required: true},
-
 	// Systemd tools (usually part of base system)
 	{Name: "systemctl", Required: true},
 	{Name: "timedatectl", Required: true},
@@ -185,23 +182,4 @@ func installDependencies(deps []dependency) error {
 	}
 
 	return nil
-}
-
-// listDependencies prints information about all dependencies and their installation status.
-func listDependencies() {
-	printCategory := func(title string, filter func(dependency) bool) {
-		fmt.Println(title)
-		for _, dep := range dependencies {
-			if filter(dep) {
-				status := "✗"
-				if isInstalled(dep) {
-					status = "✓"
-				}
-				fmt.Printf("  [%s] %-15s (package: %s)\n", status, dep.Name, dep.pkg())
-			}
-		}
-	}
-
-	printCategory("Required Dependencies:", func(d dependency) bool { return d.Required })
-	printCategory("\nOptional Dependencies:", func(d dependency) bool { return !d.Required })
 }

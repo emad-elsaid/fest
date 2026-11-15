@@ -3,7 +3,7 @@
 // It allows you to declare your system state (packages, services, files) and synchronizes the actual
 // system state to match. The package supports various resource types including pacman packages,
 // flatpak apps, npm packages, Go packages, Ruby gems, systemd services, user groups, system files,
-// and dotfile management via GNU Stow.
+// and dotfile management via a built-in GNU Stow-compatible implementation.
 package fest
 
 import (

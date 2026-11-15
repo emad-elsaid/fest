@@ -26,7 +26,7 @@ go get -u ./...      # Update all dependencies
 ```
 
 ### Testing
-Tests exist throughout the module (48 `*_test.go` files). They use
+Tests live alongside their sources (`*_test.go`). They use
 `testify/require` (direct dependency); `gock` (HTTP mocking) and `cupaloy`
 (snapshot testing) appear in some tests. Follow Go table-driven conventions:
 ```bash
@@ -65,8 +65,9 @@ go mod verify        # Verify dependencies
 ├── system_files.go       # Deploy and track system configuration files
 ├── system_files_state.go # State tracking for system files
 ├── user_groups.go        # User group membership management
-├── user_stow.go          # GNU Stow dotfile manager
+├── user_stow.go          # Dotfile manager using the stow subpackage
 ├── user_symlinks.go      # Broken symlink cleanup
+├── stow/                 # Pure Go GNU Stow-compatible symlink farm engine
 ├── yay/                  # Vendored copy of yay (AUR helper), GPL v3
 │   └── pkg/              # yay internal subpackages (db, dep, settings, sync, ...)
 ├── docs/                 # GitHub Pages site (index.html, icon.svg, CNAME)

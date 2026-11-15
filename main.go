@@ -45,7 +45,7 @@ func Main() {
 		slog.Warn("Extra arguments ignored", "arguments", args[1:])
 	}
 
-	dotfilesDir, err := os.Getwd()
+	dotfilesDir, err := workingDir()
 	checkFatal(err, "Failed to get current working dir")
 	stowDir := filepath.Join(dotfilesDir, "user")
 

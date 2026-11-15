@@ -22,7 +22,7 @@ A declarative system configuration management framework for Arch Linux written i
 - **Systemd Services**: Enable/disable system and user services, timers, and sockets
 - **User Groups**: Manage user group memberships
 - **System Files**: Deploy and track system configuration files
-- **Dotfile Management**: GNU Stow integration for user dotfiles
+- **Dotfile Management**: Built-in GNU Stow-compatible symlink farm for user dotfiles
 - **Broken Symlink Cleanup**: Automatically detect and remove broken symlinks
 - **Two-Phase Execution**: Preview changes before applying (diff mode)
 - **Updates**: Upgrade installed packages while respecting version pins
@@ -36,10 +36,9 @@ A declarative system configuration management framework for Arch Linux written i
 Before using this framework, ensure you have:
 
 1. Arch Linux system
-2. Go 1.25+ installed
-3. `stow` for dotfile management
+2. Go 1.26+ installed
 
-**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management. No separate yay installation is required.
+**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management and a pure Go reimplementation of [GNU Stow](https://www.gnu.org/software/stow/) for dotfiles. No separate yay or stow installation is required.
 
 ### Quick Start
 
@@ -235,7 +234,7 @@ system/
 fest.SystemFilesDir("system")
 ```
 
-### Dotfiles with GNU Stow
+### Dotfiles with GNU Stow semantics
 
 Place your dotfiles in `user/` directory:
 
@@ -249,6 +248,15 @@ user/
 ```
 
 Dotfiles are automatically managed when using `apply` or `save` commands.
+The `stow` subpackage implements the GNU Stow algorithm in Go: it creates
+relative symlinks in `$HOME`, folds directories into a single link when
+possible, unfolds them when several packages share a path, and supports
+`--adopt` semantics (used by `save`) plus `--override` matching.
+
+GNU Stow's ignore rules apply: VCS metadata, editor backup/autosave files and
+root-level `README*`/`LICENSE*`/`COPYING` are skipped. A package's
+`.stow-local-ignore` (or `$HOME/.stow-global-ignore`) replaces the built-in
+ignore list, using the same pattern syntax as GNU Stow.
 
 ### Lifecycle Hooks
 
@@ -297,7 +305,7 @@ type packageManager interface {
 
 - Pacman packages: Uses pacman's built-in explicit/dependency tracking
 - System files: Maintains state in `~/.local/share/dotfiles/system-files-state.json`
-- Dotfiles: Managed via GNU Stow
+- Dotfiles: managed by the built-in `stow` package (GNU Stow-compatible symlinks)
 - Services: Tracked via systemd's enabled/disabled state
 
 ## Advanced Topics
