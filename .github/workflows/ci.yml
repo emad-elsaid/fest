@@ -13,6 +13,8 @@ jobs:
     container: archlinux:latest
     steps:
       - name: Install dependencies
+        # GNU stow is not a runtime dependency anymore; it is installed only so
+        # the stow package's parity tests can compare against the real binary.
         run: pacman -Syu --noconfirm --needed base-devel go expac stow fd git
 
       - uses: actions/checkout@v4
@@ -25,6 +27,11 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+      # The example is a separate module with a replace directive; keep it
+      # compiling so its go.mod does not drift from the root module.
+      - name: Build example
+        run: cd example && go build ./...
 
       - name: Vet
         run: go vet ./...
