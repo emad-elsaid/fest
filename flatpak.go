@@ -19,7 +19,7 @@ var wantedFlatpak []string
 //
 // Example:
 //
-//	managers.Flatpak(
+//	fest.Flatpak(
 //	    "com.slack.Slack",
 //	    "com.github.tchx84.Flatseal",
 //	    "org.mozilla.firefox",
