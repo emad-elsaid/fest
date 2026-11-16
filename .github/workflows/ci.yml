@@ -8,14 +8,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # fest targets Arch Linux and links libalpm through cgo, so it cannot be
-    # built on the bare Ubuntu runner. Run everything in an Arch container.
+    # fest targets Arch Linux, so run everything in an Arch container even
+    # though the code is now pure Go and would build on the Ubuntu runner.
     container: archlinux:latest
     steps:
       - name: Install dependencies
         # GNU stow is not a runtime dependency anymore; it is installed only so
         # the stow package's parity tests can compare against the real binary.
-        run: pacman -Syu --noconfirm --needed base-devel go expac stow fd git
+        run: pacman -Syu --noconfirm --needed go expac stow fd git
 
       - uses: actions/checkout@v4
 

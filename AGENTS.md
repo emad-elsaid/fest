@@ -70,6 +70,8 @@ go mod verify        # Verify dependencies
 ├── stow/                 # Pure Go GNU Stow-compatible symlink farm engine
 ├── yay/                  # Vendored copy of yay (AUR helper), GPL v3
 │   └── pkg/              # yay internal subpackages (db, dep, settings, sync, ...)
+│       ├── alpm/         # Pure Go pacman data model (replaces go-alpm/libalpm)
+│       └── db/ialpm/     # Reads pacman's local/sync DBs without cgo
 ├── docs/                 # GitHub Pages site (index.html, icon.svg, CNAME)
 ├── example/              # Example user configuration (uses a replace directive)
 ├── go.mod                # Module definition (go 1.26) - github.com/emad-elsaid/fest
@@ -136,8 +138,8 @@ go mod verify        # Verify dependencies
 - Minimize external dependencies
 - Prefer stdlib when possible
 - Direct deps include: types, color, promptui, lo, go-version, alone,
-  aur, go-alpm, votar, go-pacmanconf, go-srcinfo, gotext (yay),
-  testify, gock, cupaloy (testing)
+  aur, votar, go-pacmanconf, go-srcinfo, gotext (yay), klauspost/compress,
+  ulikunitz/xz, testify, gock, cupaloy (testing)
 
 ## Architecture Patterns
 

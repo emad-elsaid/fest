@@ -11,10 +11,9 @@ sudo pacman-key --populate archlinux
 sudo pacman -Sy --noconfirm archlinux-keyring
 sudo pacman-key --populate archlinux
 
-# fest links libalpm through cgo, so it needs a C toolchain (base-devel) and the
-# pacman package, which ships /usr/include/alpm.h and /usr/lib/libalpm.so.
+# fest is pure Go (no cgo or libalpm headers needed to build).
 # go, expac and fd are fest's required runtime dependencies.
-sudo pacman -Syu --noconfirm --needed base-devel go expac fd
+sudo pacman -Syu --noconfirm --needed go expac fd
 
 # The box ships /etc/resolv.conf with no nameserver and relies on
 # systemd-resolved through nsswitch. libc (pacman) resolves fine, but Go's

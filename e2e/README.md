@@ -49,8 +49,7 @@ declaration in one has a matching assertion in the other. Keep them in sync.
 ## CI
 
 `.github/workflows/ci.yml` runs build, vet and the unit tests in an
-`archlinux` container (fest links libalpm via cgo, so it cannot build on the
-Ubuntu runner directly).
+`archlinux` container so the tests run against the target environment.
 
 This end-to-end test is **not** part of CI: it needs a hypervisor, so it has to
 run on a machine with Vagrant and VirtualBox installed and `vboxdrv` loaded. Run
