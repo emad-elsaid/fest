@@ -4,7 +4,6 @@ go 1.26
 
 require (
 	github.com/Jguer/aur v1.2.3
-	github.com/Jguer/go-alpm/v2 v2.3.1
 	github.com/Jguer/votar v1.0.0
 	github.com/Morganamilo/go-pacmanconf v0.0.0-20210502114700-cff030e927a5
 	github.com/Morganamilo/go-srcinfo v1.0.0
@@ -15,10 +14,12 @@ require (
 	github.com/fatih/color v1.18.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-version v1.8.0
+	github.com/klauspost/compress v1.20.0
 	github.com/leonelquinteros/gotext v1.7.2
 	github.com/manifoldco/promptui v0.9.0
 	github.com/samber/lo v1.52.0
 	github.com/stretchr/testify v1.11.1
+	github.com/ulikunitz/xz v0.5.11
 	golang.org/x/net v0.52.0
 	golang.org/x/sys v0.42.0
 	golang.org/x/term v0.41.0

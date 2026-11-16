@@ -5,7 +5,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 )
 
 type (

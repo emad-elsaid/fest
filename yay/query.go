@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	aur "github.com/Jguer/aur"
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 	mapset "github.com/deckarep/golang-set/v2"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db"

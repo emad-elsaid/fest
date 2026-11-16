@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 
 	"github.com/emad-elsaid/fest/yay/pkg/text"
 )

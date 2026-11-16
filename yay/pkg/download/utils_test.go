@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db"
 	"github.com/emad-elsaid/fest/yay/pkg/settings/exe"

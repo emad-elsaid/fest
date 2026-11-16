@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 	pacmanconf "github.com/Morganamilo/go-pacmanconf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

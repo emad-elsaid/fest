@@ -6,7 +6,7 @@ import (
 
 	"github.com/emad-elsaid/fest/yay/pkg/text"
 
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 )
 
 func GetVersionDiff(oldVersion, newVersion string) (left, right string) {
