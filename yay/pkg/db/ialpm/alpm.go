@@ -1,543 +1,563 @@
 package ialpm
 
 import (
-	"errors"
 	"fmt"
-	"os"
+	"path"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
-	alpm "github.com/Jguer/go-alpm/v2"
 	pacmanconf "github.com/Morganamilo/go-pacmanconf"
-	"github.com/leonelquinteros/gotext"
 
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 	"github.com/emad-elsaid/fest/yay/pkg/db"
 	"github.com/emad-elsaid/fest/yay/pkg/settings"
 	"github.com/emad-elsaid/fest/yay/pkg/text"
 )
 
+// AlpmExecutor implements db.Executor by reading pacman's on-disk databases.
+// It replaces go-alpm's cgo handle with a pure Go reader. Package
+// transactions are still performed by invoking pacman.
 type AlpmExecutor struct {
-	handle       *alpm.Handle
-	localDB      alpm.IDB
-	syncDB       alpm.IDBList
-	syncDBsCache []alpm.IDB
-	conf         *pacmanconf.Config
-	log          *text.Logger
+	conf *pacmanconf.Config
+	log  *text.Logger
 
-	installedRemotePkgNames []string
-	installedRemotePkgMap   map[string]alpm.IPackage
-	installedSyncPkgNames   []string
+	localDB      *alpm.DB
+	syncDB       *alpm.DBList
+	syncIndexes  []syncIndex
+	localPkgs    []alpm.IPackage
+	localByName  map[string]alpm.IPackage
+	sourcesMu    sync.Mutex
+	remoteNames  []string
+	remotePkgs   map[string]alpm.IPackage
+	syncNames    []string
+	sourcesReady bool
 }
 
+// syncIndex holds per-database lookup structures derived once at load time.
+type syncIndex struct {
+	db        *alpm.DB
+	replacers map[string][]replacerEntry
+}
+
+// replacerEntry is a package that replaces a dependency name.
+type replacerEntry struct {
+	pkg alpm.IPackage
+	dep alpm.Depend
+}
+
+// NewExecutor loads the local and sync databases described by pacmanConf.
 func NewExecutor(pacmanConf *pacmanconf.Config, logger *text.Logger) (*AlpmExecutor, error) {
-	ae := &AlpmExecutor{
-		handle:                  nil,
-		localDB:                 nil,
-		syncDB:                  nil,
-		syncDBsCache:            []alpm.IDB{},
-		conf:                    pacmanConf,
-		log:                     logger,
-		installedRemotePkgNames: nil,
-		installedRemotePkgMap:   nil,
-		installedSyncPkgNames:   nil,
+	if pacmanConf == nil {
+		return nil, fmt.Errorf("nil pacman configuration")
 	}
 
-	if err := ae.RefreshHandle(); err != nil {
+	executor := &AlpmExecutor{conf: pacmanConf, log: logger}
+	if err := executor.load(); err != nil {
 		return nil, err
 	}
 
-	var err error
-	ae.localDB, err = ae.handle.LocalDB()
+	return executor, nil
+}
+
+// load reads the local and sync databases into memory.
+func (ae *AlpmExecutor) load() error {
+	dbPath := ae.conf.DBPath
+	if dbPath == "" {
+		dbPath = "/var/lib/pacman/"
+	}
+
+	shouldIgnore := func(name string, groups []string) bool {
+		return matchesAny(ae.conf.IgnorePkg, name) || groupsMatchAny(ae.conf.IgnoreGroup, groups)
+	}
+
+	localDB, err := loadLocalDB(dbPath, shouldIgnore, ae.log)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("failed to read local database: %w", err)
 	}
 
-	ae.syncDB, err = ae.handle.SyncDBs()
-	if err != nil {
-		return nil, err
+	syncDB, syncDBs := loadSyncDBs(ae.conf, dbPath, shouldIgnore, ae.log)
+
+	ae.localDB = localDB
+	ae.syncDB = syncDB
+	ae.syncDB.SetLocalDB(localDB)
+	ae.syncDB.SetProviderChooser(ae.chooseProvider)
+	ae.syncIndexes = buildSyncIndexes(syncDBs)
+	ae.localPkgs = localDB.PkgCache().Slice()
+
+	ae.localByName = make(map[string]alpm.IPackage, len(ae.localPkgs))
+	for _, pkg := range ae.localPkgs {
+		ae.localByName[pkg.Name()] = pkg
 	}
 
-	return ae, nil
+	ae.sourcesMu.Lock()
+	ae.remoteNames = nil
+	ae.remotePkgs = nil
+	ae.syncNames = nil
+	ae.sourcesReady = false
+	ae.sourcesMu.Unlock()
+
+	return nil
 }
 
-func toUsage(usages []string) alpm.Usage {
-	if len(usages) == 0 {
-		return alpm.UsageAll
-	}
-
-	var ret alpm.Usage
-
-	for _, usage := range usages {
-		switch usage {
-		case "Sync":
-			ret |= alpm.UsageSync
-		case "Search":
-			ret |= alpm.UsageSearch
-		case "Install":
-			ret |= alpm.UsageInstall
-		case "Upgrade":
-			ret |= alpm.UsageUpgrade
-		case "All":
-			ret |= alpm.UsageAll
-		}
-	}
-
-	return ret
-}
-
-func configureAlpm(pacmanConf *pacmanconf.Config, alpmHandle *alpm.Handle) error {
-	for _, repo := range pacmanConf.Repos {
-		// TODO: set SigLevel
-		alpmDB, err := alpmHandle.RegisterSyncDB(repo.Name, 0)
-		if err != nil {
-			return err
-		}
-
-		alpmDB.SetServers(repo.Servers)
-		alpmDB.SetUsage(toUsage(repo.Usage))
-	}
-
-	if err := alpmHandle.SetCacheDirs(pacmanConf.CacheDir); err != nil {
-		return err
-	}
-
-	// add hook directories 1-by-1 to avoid overwriting the system directory
-	for _, dir := range pacmanConf.HookDir {
-		if err := alpmHandle.AddHookDir(dir); err != nil {
-			return err
-		}
-	}
-
-	if err := alpmHandle.SetGPGDir(pacmanConf.GPGDir); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetLogFile(pacmanConf.LogFile); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetIgnorePkgs(pacmanConf.IgnorePkg); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetIgnoreGroups(pacmanConf.IgnoreGroup); err != nil {
-		return err
-	}
-
-	if err := alpmSetArchitecture(alpmHandle, pacmanConf.Architecture); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetNoUpgrades(pacmanConf.NoUpgrade); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetNoExtracts(pacmanConf.NoExtract); err != nil {
-		return err
-	}
-
-	if err := alpmHandle.SetUseSyslog(pacmanConf.UseSyslog); err != nil {
-		return err
-	}
-
-	return alpmHandle.SetCheckSpace(pacmanConf.CheckSpace)
-}
-
-func (ae *AlpmExecutor) logCallback() func(level alpm.LogLevel, str string) {
-	return func(level alpm.LogLevel, str string) {
-		switch level {
-		case alpm.LogWarning:
-			ae.log.Warn(str)
-		case alpm.LogError:
-			ae.log.Error(str)
-		}
-	}
-}
-
-func (ae *AlpmExecutor) questionCallback() func(question alpm.QuestionAny) {
-	return func(question alpm.QuestionAny) {
-		if qi, err := question.QuestionInstallIgnorepkg(); err == nil {
-			qi.SetInstall(true)
-		}
-
-		qp, err := question.QuestionSelectProvider()
-		if err != nil {
-			return
-		}
-
-		if settings.HideMenus {
-			return
-		}
-
-		size := 0
-
-		_ = qp.Providers(ae.handle).ForEach(func(pkg alpm.IPackage) error {
-			size++
-			return nil
-		})
-
-		str := text.Bold(gotext.Get("There are %[1]d providers available for %[2]s:", size, qp.Dep()))
-
-		size = 1
-
-		var dbName string
-
-		_ = qp.Providers(ae.handle).ForEach(func(pkg alpm.IPackage) error {
-			thisDB := pkg.DB().Name()
-
-			if dbName != thisDB {
-				dbName = thisDB
-				str += "\n"
-				str += ae.log.SprintOperationInfo(gotext.Get("Repository"), " ", dbName, "\n    ")
-			}
-			str += fmt.Sprintf("%d) %s ", size, pkg.Name())
-			size++
-			return nil
-		})
-
-		ae.log.OperationInfoln(str)
-
-		for {
-			ae.log.Println(gotext.Get("\nEnter a number (default=1): "))
-
-			// TODO: reenable noconfirm
-			if settings.NoConfirm {
-				ae.log.Println()
-
-				break
-			}
-
-			numberBuf, err := ae.log.GetInput("", false)
-			if err != nil {
-				ae.log.Errorln(err)
-				break
-			}
-
-			if numberBuf == "" {
-				break
-			}
-
-			num, err := strconv.Atoi(numberBuf)
-			if err != nil {
-				ae.log.Errorln(gotext.Get("invalid number: %s", numberBuf))
-				continue
-			}
-
-			if num < 1 || num > size {
-				ae.log.Errorln(gotext.Get("invalid value: %d is not between %d and %d", num, 1, size))
-				continue
-			}
-
-			qp.SetUseIndex(num - 1)
-
-			break
-		}
-	}
-}
-
+// RefreshHandle reloads the databases, for example after `pacman -Sy`. It must
+// not be called concurrently with other executor queries; yay calls it before
+// starting a transaction.
 func (ae *AlpmExecutor) RefreshHandle() error {
-	if ae.handle != nil {
-		if errRelease := ae.handle.Release(); errRelease != nil {
-			return errRelease
-		}
-	}
-
-	alpmHandle, err := alpm.Initialize(ae.conf.RootDir, ae.conf.DBPath)
-	if err != nil {
-		return errors.New(gotext.Get("unable to CreateHandle: %s", err))
-	}
-
-	if errConf := configureAlpm(ae.conf, alpmHandle); errConf != nil {
-		return errConf
-	}
-
-	alpmSetQuestionCallback(alpmHandle, ae.questionCallback())
-	alpmSetLogCallback(alpmHandle, ae.logCallback())
-	ae.handle = alpmHandle
-	ae.syncDBsCache = nil
-
-	ae.syncDB, err = alpmHandle.SyncDBs()
-	if err != nil {
-		return err
-	}
-
-	ae.localDB, err = alpmHandle.LocalDB()
-
-	return err
+	return ae.load()
 }
 
+// AlpmArchitectures returns the architectures from pacman.conf.
+func (ae *AlpmExecutor) AlpmArchitectures() ([]string, error) {
+	return append([]string(nil), ae.conf.Architecture...), nil
+}
+
+// LocalSatisfierExists reports whether an installed package satisfies dep.
 func (ae *AlpmExecutor) LocalSatisfierExists(pkgName string) bool {
-	if _, err := ae.localDB.PkgCache().FindSatisfier(pkgName); err != nil {
-		return false
-	}
+	_, err := ae.localDB.PkgCache().FindSatisfier(pkgName)
 
-	return true
+	return err == nil
 }
 
+// SyncSatisfierExists reports whether a package in the sync databases
+// satisfies dep.
 func (ae *AlpmExecutor) SyncSatisfierExists(pkgName string) bool {
-	if _, err := ae.syncDB.FindSatisfier(pkgName); err != nil {
-		return false
-	}
+	_, err := ae.syncDB.FindSatisfier(pkgName)
 
-	return true
+	return err == nil
 }
 
+// IsCorrectVersionInstalled reports whether pkgName is installed at exactly
+// versionRequired.
 func (ae *AlpmExecutor) IsCorrectVersionInstalled(pkgName, versionRequired string) bool {
-	alpmPackage := ae.localDB.Pkg(pkgName)
-	if alpmPackage == nil {
-		return false
-	}
-
-	return alpmPackage.Version() == versionRequired
-}
-
-func (ae *AlpmExecutor) SyncSatisfier(pkgName string) alpm.IPackage {
-	foundPkg, err := ae.syncDB.FindSatisfier(pkgName)
-	if err != nil {
-		return nil
-	}
-
-	return foundPkg
-}
-
-func (ae *AlpmExecutor) PackagesFromGroup(groupName string) []alpm.IPackage {
-	groupPackages := []alpm.IPackage{}
-	_ = ae.syncDB.FindGroupPkgs(groupName).ForEach(func(pkg alpm.IPackage) error {
-		groupPackages = append(groupPackages, pkg)
-
-		return nil
-	})
-
-	return groupPackages
-}
-
-func (ae *AlpmExecutor) PackagesFromGroupAndDB(groupName, dbName string) ([]alpm.IPackage, error) {
-	singleDBList, err := ae.handle.SyncDBListByDBName(dbName)
-	if err != nil {
-		return nil, err
-	}
-
-	groupPackages := []alpm.IPackage{}
-	_ = singleDBList.FindGroupPkgs(groupName).ForEach(func(pkg alpm.IPackage) error {
-		groupPackages = append(groupPackages, pkg)
-
-		return nil
-	})
-
-	return groupPackages, nil
-}
-
-func (ae *AlpmExecutor) LocalPackages() []alpm.IPackage {
-	localPackages := []alpm.IPackage{}
-	_ = ae.localDB.PkgCache().ForEach(func(pkg alpm.IPackage) error {
-		localPackages = append(localPackages, pkg)
-		return nil
-	})
-
-	return localPackages
-}
-
-// SyncPackages searches SyncDB for packages or returns all packages if no search param is given.
-func (ae *AlpmExecutor) SyncPackages(pkgNames ...string) []alpm.IPackage {
-	repoPackages := []alpm.IPackage{}
-	_ = ae.syncDB.ForEach(func(alpmDB alpm.IDB) error {
-		if len(pkgNames) == 0 {
-			_ = alpmDB.PkgCache().ForEach(func(pkg alpm.IPackage) error {
-				repoPackages = append(repoPackages, pkg)
-				return nil
-			})
-		} else {
-			_ = alpmDB.Search(pkgNames).ForEach(func(pkg alpm.IPackage) error {
-				repoPackages = append(repoPackages, pkg)
-				return nil
-			})
-		}
-		return nil
-	})
-
-	return repoPackages
-}
-
-func (ae *AlpmExecutor) LocalPackage(pkgName string) alpm.IPackage {
 	pkg := ae.localDB.Pkg(pkgName)
-	if pkg == nil {
+
+	return pkg != nil && pkg.Version() == versionRequired
+}
+
+// SyncSatisfier returns a sync package that satisfies pkgName.
+func (ae *AlpmExecutor) SyncSatisfier(pkgName string) alpm.IPackage {
+	pkg, err := ae.syncDB.FindSatisfier(pkgName)
+	if err != nil {
 		return nil
 	}
 
 	return pkg
 }
 
-func (ae *AlpmExecutor) syncDBs() []alpm.IDB {
-	if ae.syncDBsCache == nil {
-		ae.syncDBsCache = ae.syncDB.Slice()
-	}
-
-	return ae.syncDBsCache
+// PackagesFromGroup returns every sync package in the named group.
+func (ae *AlpmExecutor) PackagesFromGroup(groupName string) []alpm.IPackage {
+	return ae.syncDB.FindGroupPkgs(groupName).Slice()
 }
 
+// PackagesFromGroupAndDB returns packages in the named group and database.
+func (ae *AlpmExecutor) PackagesFromGroupAndDB(groupName, dbName string) ([]alpm.IPackage, error) {
+	syncDB, err := ae.dbByName(dbName)
+	if err != nil {
+		return nil, err
+	}
+
+	var packages []alpm.IPackage
+
+	for _, pkg := range syncDB.PkgCache().Slice() {
+		for _, group := range pkg.Groups().Slice() {
+			if group == groupName {
+				packages = append(packages, pkg)
+
+				break
+			}
+		}
+	}
+
+	return packages, nil
+}
+
+// LocalPackages returns every installed package.
+func (ae *AlpmExecutor) LocalPackages() []alpm.IPackage {
+	return append([]alpm.IPackage(nil), ae.localPkgs...)
+}
+
+// SyncPackages returns packages from every sync database. With no arguments
+// it returns all packages; otherwise every argument must match.
+func (ae *AlpmExecutor) SyncPackages(pkgNames ...string) []alpm.IPackage {
+	var packages []alpm.IPackage
+
+	for _, index := range ae.syncIndexes {
+		if len(pkgNames) == 0 {
+			packages = append(packages, index.db.PkgCache().Slice()...)
+		} else {
+			packages = append(packages, index.db.Search(pkgNames).Slice()...)
+		}
+	}
+
+	return packages
+}
+
+// LocalPackage returns an installed package by name.
+func (ae *AlpmExecutor) LocalPackage(pkgName string) alpm.IPackage {
+	return ae.localByName[pkgName]
+}
+
+// SyncPackage returns a package by name from the sync databases.
 func (ae *AlpmExecutor) SyncPackage(pkgName string) alpm.IPackage {
-	for _, db := range ae.syncDBs() {
-		if dbPkg := db.Pkg(pkgName); dbPkg != nil {
-			return dbPkg
+	for _, index := range ae.syncIndexes {
+		if pkg := index.db.Pkg(pkgName); pkg != nil {
+			return pkg
 		}
 	}
 
 	return nil
 }
 
+// SyncPackageFromDB returns a package by name from a specific database.
 func (ae *AlpmExecutor) SyncPackageFromDB(pkgName, dbName string) alpm.IPackage {
-	singleDB, err := ae.handle.SyncDBByName(dbName)
+	syncDB, err := ae.dbByName(dbName)
 	if err != nil {
 		return nil
 	}
 
-	return singleDB.Pkg(pkgName)
+	return syncDB.Pkg(pkgName)
 }
 
+// SatisfierFromDB returns a package from dbName that satisfies pkgName.
 func (ae *AlpmExecutor) SatisfierFromDB(pkgName, dbName string) (alpm.IPackage, error) {
-	singleDBList, err := ae.handle.SyncDBListByDBName(dbName)
+	syncDB, err := ae.dbByName(dbName)
 	if err != nil {
 		return nil, err
 	}
 
-	foundPkg, err := singleDBList.FindSatisfier(pkgName)
+	list := alpm.NewDBList(syncDB)
+	list.SetLocalDB(ae.localDB)
+	list.SetProviderChooser(ae.chooseProvider)
+
+	pkg, err := list.FindSatisfier(pkgName)
 	if err != nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr // no satisfier is not an error for callers
 	}
 
-	return foundPkg, nil
+	return pkg, nil
 }
 
+// PackageDepends returns the dependencies of a package.
 func (ae *AlpmExecutor) PackageDepends(pkg alpm.IPackage) []alpm.Depend {
-	alpmPackage := pkg.(*alpm.Package)
-	return alpmPackage.Depends().Slice()
+	return pkg.Depends().Slice()
 }
 
+// PackageOptionalDepends returns the optional dependencies of a package.
 func (ae *AlpmExecutor) PackageOptionalDepends(pkg alpm.IPackage) []alpm.Depend {
-	alpmPackage := pkg.(*alpm.Package)
-	return alpmPackage.OptionalDepends().Slice()
+	return pkg.OptionalDepends().Slice()
 }
 
+// PackageProvides returns the provisions of a package.
 func (ae *AlpmExecutor) PackageProvides(pkg alpm.IPackage) []alpm.Depend {
-	alpmPackage := pkg.(*alpm.Package)
-	return alpmPackage.Provides().Slice()
+	return pkg.Provides().Slice()
 }
 
+// PackageGroups returns the groups of a package.
 func (ae *AlpmExecutor) PackageGroups(pkg alpm.IPackage) []string {
-	alpmPackage := pkg.(*alpm.Package)
-	return alpmPackage.Groups().Slice()
+	return pkg.Groups().Slice()
 }
 
-// upRepo gathers local packages and checks if they have new versions.
-// Output: Upgrade type package list.
-func (ae *AlpmExecutor) SyncUpgrades(enableDowngrade bool) (
-	map[string]db.SyncUpgrade, error,
-) {
-	ups := map[string]db.SyncUpgrade{}
-	var errReturn error
+// SyncUpgrades computes the list of repository upgrades, mirroring libalpm's
+// alpm_sync_sysupgrade without opening a transaction.
+func (ae *AlpmExecutor) SyncUpgrades(enableDowngrade bool) (map[string]db.SyncUpgrade, error) {
+	upgrades := make(map[string]db.SyncUpgrade)
 
-	localDB, errDB := ae.handle.LocalDB()
-	if errDB != nil {
-		return ups, errDB
-	}
-
-	if err := ae.handle.TransInit(alpm.TransFlagNoLock); err != nil {
-		return ups, err
-	}
-
-	defer func() {
-		errReturn = ae.handle.TransRelease()
-	}()
-
-	if err := ae.handle.SyncSysupgrade(enableDowngrade); err != nil {
-		return ups, err
-	}
-
-	_ = ae.handle.TransGetAdd().ForEach(func(pkg alpm.IPackage) error {
-		localVer := "-"
-		reason := alpm.PkgReasonExplicit
-
-		if localPkg := localDB.Pkg(pkg.Name()); localPkg != nil {
-			localVer = localPkg.Version()
-			reason = localPkg.Reason()
+	for _, localPkg := range ae.localPkgs {
+		// A package already selected as a replacement must not be replaced by a
+		// later literal upgrade from another repository.
+		if _, selected := upgrades[localPkg.Name()]; selected {
+			continue
 		}
 
-		ups[pkg.Name()] = db.SyncUpgrade{
-			Package:      pkg,
-			Reason:       reason,
-			LocalVersion: localVer,
-		}
+		for _, index := range ae.syncIndexes {
+			syncDB := index.db
 
-		return nil
-	})
-
-	return ups, errReturn
-}
-
-func (ae *AlpmExecutor) BiggestPackages() []alpm.IPackage {
-	localPackages := []alpm.IPackage{}
-	_ = ae.localDB.PkgCache().SortBySize().ForEach(func(pkg alpm.IPackage) error {
-		localPackages = append(localPackages, pkg)
-		return nil
-	})
-
-	return localPackages
-}
-
-func (ae *AlpmExecutor) LastBuildTime() time.Time {
-	var lastTime time.Time
-
-	_ = ae.syncDB.ForEach(func(db alpm.IDB) error {
-		_ = db.PkgCache().ForEach(func(pkg alpm.IPackage) error {
-			thisTime := pkg.BuildDate()
-			if thisTime.After(lastTime) {
-				lastTime = thisTime
+			if syncDB.Usage()&alpm.UsageUpgrade == 0 {
+				continue
 			}
-			return nil
-		})
-		return nil
-	})
 
-	return lastTime
+			if ae.addReplacers(upgrades, localPkg, index) {
+				break
+			}
+
+			syncPkg := syncDB.Pkg(localPkg.Name())
+			if syncPkg == nil {
+				continue
+			}
+
+			ae.addLiteralUpgrade(upgrades, localPkg, syncPkg, enableDowngrade)
+
+			break
+		}
+	}
+
+	return upgrades, nil
 }
 
-func (ae *AlpmExecutor) Cleanup() {
-	if ae.handle != nil {
-		if err := ae.handle.Release(); err != nil {
-			fmt.Fprintln(os.Stderr, err)
+// addReplacers adds every non-ignored package in the indexed database that
+// replaces localPkg. It reports whether at least one replacer was added.
+func (ae *AlpmExecutor) addReplacers(upgrades map[string]db.SyncUpgrade, localPkg alpm.IPackage, index syncIndex) bool {
+	added := false
+
+	for _, entry := range index.replacers[localPkg.Name()] {
+		if !alpm.MatchLiteral(localPkg, entry.dep) {
+			continue
+		}
+
+		if entry.pkg.ShouldIgnore() || localPkg.ShouldIgnore() {
+			continue
+		}
+
+		if existing, ok := upgrades[entry.pkg.Name()]; ok {
+			if existing.Package.DB() != index.db {
+				continue
+			}
+
+			if localPkg.Reason() == alpm.PkgReasonExplicit {
+				existing.Reason = alpm.PkgReasonExplicit
+				upgrades[entry.pkg.Name()] = existing
+			}
+
+			continue
+		}
+
+		upgrades[entry.pkg.Name()] = db.SyncUpgrade{
+			Package:      entry.pkg,
+			LocalVersion: ae.localVersionOrDash(entry.pkg.Name()),
+			Reason:       localPkg.Reason(),
+		}
+
+		added = true
+	}
+
+	return added
+}
+
+// addLiteralUpgrade adds a same-name upgrade or downgrade when allowed.
+func (ae *AlpmExecutor) addLiteralUpgrade(upgrades map[string]db.SyncUpgrade, localPkg, syncPkg alpm.IPackage, enableDowngrade bool) {
+	if syncPkg.ShouldIgnore() || localPkg.ShouldIgnore() {
+		return
+	}
+
+	cmp := alpm.VerCmp(syncPkg.Version(), localPkg.Version())
+
+	switch {
+	case cmp > 0:
+		upgrades[syncPkg.Name()] = db.SyncUpgrade{
+			Package:      syncPkg,
+			LocalVersion: localPkg.Version(),
+			Reason:       localPkg.Reason(),
+		}
+	case cmp < 0 && enableDowngrade:
+		upgrades[syncPkg.Name()] = db.SyncUpgrade{
+			Package:      syncPkg,
+			LocalVersion: localPkg.Version(),
+			Reason:       localPkg.Reason(),
 		}
 	}
 }
 
-func (ae *AlpmExecutor) Repos() (repos []string) {
-	_ = ae.syncDB.ForEach(func(db alpm.IDB) error {
-		repos = append(repos, db.Name())
+// BiggestPackages returns installed packages sorted by installed size.
+func (ae *AlpmExecutor) BiggestPackages() []alpm.IPackage {
+	return ae.localDB.PkgCache().SortBySize().Slice()
+}
+
+// LastBuildTime returns the newest build date across the sync databases.
+func (ae *AlpmExecutor) LastBuildTime() time.Time {
+	var last time.Time
+
+	for _, index := range ae.syncIndexes {
+		for _, pkg := range index.db.PkgCache().Slice() {
+			if buildDate := pkg.BuildDate(); buildDate.After(last) {
+				last = buildDate
+			}
+		}
+	}
+
+	return last
+}
+
+// Cleanup releases any resources held by the executor.
+func (ae *AlpmExecutor) Cleanup() {}
+
+// Repos returns the configured repository names in order.
+func (ae *AlpmExecutor) Repos() []string {
+	repos := make([]string, len(ae.syncIndexes))
+	for i, index := range ae.syncIndexes {
+		repos[i] = index.db.Name()
+	}
+
+	return repos
+}
+
+// InstalledRemotePackages returns installed packages that are not in any sync
+// database, keyed by name.
+func (ae *AlpmExecutor) InstalledRemotePackages() map[string]alpm.IPackage {
+	ae.computeInstalledBySource()
+
+	return ae.remotePkgs
+}
+
+// InstalledRemotePackageNames returns the names of installed packages that are
+// not in any sync database.
+func (ae *AlpmExecutor) InstalledRemotePackageNames() []string {
+	ae.computeInstalledBySource()
+
+	return ae.remoteNames
+}
+
+// InstalledSyncPackageNames returns the names of installed packages that are
+// also present in a sync database.
+func (ae *AlpmExecutor) InstalledSyncPackageNames() []string {
+	ae.computeInstalledBySource()
+
+	return ae.syncNames
+}
+
+// computeInstalledBySource splits installed packages into repository and
+// foreign (AUR) packages.
+func (ae *AlpmExecutor) computeInstalledBySource() {
+	ae.sourcesMu.Lock()
+	defer ae.sourcesMu.Unlock()
+
+	if ae.sourcesReady {
+		return
+	}
+
+	ae.remotePkgs = make(map[string]alpm.IPackage)
+	ae.remoteNames = nil
+	ae.syncNames = nil
+
+	for _, localPkg := range ae.localPkgs {
+		if ae.SyncPackage(localPkg.Name()) != nil {
+			ae.syncNames = append(ae.syncNames, localPkg.Name())
+		} else {
+			ae.remoteNames = append(ae.remoteNames, localPkg.Name())
+			ae.remotePkgs[localPkg.Name()] = localPkg
+		}
+	}
+
+	ae.sourcesReady = true
+}
+
+// SetLogger replaces the executor's logger.
+func (ae *AlpmExecutor) SetLogger(logger *text.Logger) {
+	ae.log = logger
+}
+
+// chooseProvider asks the user to pick among multiple providers, matching
+// yay's previous libalpm question callback. With menus hidden or
+// --noconfirm it falls back to the first provider.
+func (ae *AlpmExecutor) chooseProvider(dep alpm.Depend, providers []alpm.IPackage) alpm.IPackage {
+	if len(providers) == 0 {
 		return nil
-	})
+	}
 
-	return
+	if len(providers) == 1 || settings.HideMenus || ae.log == nil {
+		return providers[0]
+	}
+
+	ae.log.OperationInfoln(fmt.Sprintf("There are %d providers available for %s:", len(providers), dep.Name))
+	for i, provider := range providers {
+		ae.log.OperationInfoln(fmt.Sprintf("%d) %s", i+1, provider.Name()))
+	}
+
+	for {
+		ae.log.Println("\nEnter a number (default=1): ")
+
+		input, err := ae.log.GetInput("", settings.NoConfirm)
+		if err != nil {
+			return providers[0]
+		}
+
+		input = strings.TrimSpace(input)
+		if input == "" {
+			return providers[0]
+		}
+
+		choice, err := strconv.Atoi(input)
+		if err != nil || choice < 1 || choice > len(providers) {
+			ae.log.Errorln("invalid value:", input)
+
+			continue
+		}
+
+		return providers[choice-1]
+	}
 }
 
-func alpmSetArchitecture(alpmHandle *alpm.Handle, arch []string) error {
-	return alpmHandle.SetArchitectures(arch)
+// localVersionOrDash returns the installed version of name, or "-" when it is
+// not installed. yay's version diff printing understands the "-" sentinel for
+// packages that are new rather than upgraded.
+func (ae *AlpmExecutor) localVersionOrDash(name string) string {
+	if pkg := ae.localByName[name]; pkg != nil {
+		return pkg.Version()
+	}
+
+	return "-"
 }
 
-func (ae *AlpmExecutor) AlpmArchitectures() ([]string, error) {
-	architectures, err := ae.handle.GetArchitectures()
+// dbByName returns the sync database with the given name.
+func (ae *AlpmExecutor) dbByName(name string) (*alpm.DB, error) {
+	for _, index := range ae.syncIndexes {
+		if index.db.Name() == name {
+			return index.db, nil
+		}
+	}
 
-	return architectures.Slice(), err
+	return nil, fmt.Errorf("database not found: %s", name)
 }
 
-func alpmSetLogCallback(alpmHandle *alpm.Handle, cb func(alpm.LogLevel, string)) {
-	alpmHandle.SetLogCallback(func(ctx any, lvl alpm.LogLevel, msg string) {
-		cbo := ctx.(func(alpm.LogLevel, string))
-		cbo(lvl, msg)
-	}, cb)
+// buildSyncIndexes derives the per-database lookup tables used by
+// SyncUpgrades.
+func buildSyncIndexes(syncDBs []*alpm.DB) []syncIndex {
+	indexes := make([]syncIndex, len(syncDBs))
+
+	for i, syncDB := range syncDBs {
+		index := syncIndex{
+			db:        syncDB,
+			replacers: make(map[string][]replacerEntry),
+		}
+
+		for _, pkg := range syncDB.PkgCache().Slice() {
+			for _, replace := range pkg.Replaces().Slice() {
+				index.replacers[replace.Name] = append(index.replacers[replace.Name], replacerEntry{
+					pkg: pkg,
+					dep: replace,
+				})
+			}
+		}
+
+		indexes[i] = index
+	}
+
+	return indexes
 }
 
-func alpmSetQuestionCallback(alpmHandle *alpm.Handle, cb func(alpm.QuestionAny)) {
-	alpmHandle.SetQuestionCallback(func(ctx any, q alpm.QuestionAny) {
-		cbo := ctx.(func(alpm.QuestionAny))
-		cbo(q)
-	}, cb)
+// matchesAny reports whether name matches any of the glob patterns. pacman
+// uses fnmatch(3); path.Match is close enough for package and group names, but
+// its negation syntax is [^...] instead of [!...], so translate that.
+func matchesAny(patterns []string, name string) bool {
+	for _, pattern := range patterns {
+		pattern = strings.ReplaceAll(pattern, "[!", "[^")
+
+		if matched, err := path.Match(pattern, name); err == nil && matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+// groupsMatchAny reports whether any group matches any of the glob patterns.
+func groupsMatchAny(patterns, groups []string) bool {
+	for _, group := range groups {
+		if matchesAny(patterns, group) {
+			return true
+		}
+	}
+
+	return false
 }

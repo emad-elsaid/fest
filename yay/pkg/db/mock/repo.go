@@ -3,7 +3,7 @@ package mock
 import (
 	"time"
 
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 )
 
 type DependList struct {

@@ -5,7 +5,7 @@ import (
 	"strconv"
 
 	"github.com/Jguer/aur"
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 	"github.com/leonelquinteros/gotext"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db"

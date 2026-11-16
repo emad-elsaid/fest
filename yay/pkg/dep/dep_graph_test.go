@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	aurc "github.com/Jguer/aur"
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 	"github.com/stretchr/testify/require"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db"

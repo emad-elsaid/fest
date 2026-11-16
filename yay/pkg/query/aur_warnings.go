@@ -6,7 +6,7 @@ import (
 	"github.com/leonelquinteros/gotext"
 
 	"github.com/Jguer/aur"
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db"
 	"github.com/emad-elsaid/fest/yay/pkg/text"

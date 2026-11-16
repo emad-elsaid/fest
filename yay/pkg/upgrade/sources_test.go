@@ -14,7 +14,7 @@ import (
 	aur "github.com/Jguer/aur"
 	"github.com/stretchr/testify/assert"
 
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 
 	"github.com/emad-elsaid/fest/yay/pkg/db/mock"
 	"github.com/emad-elsaid/fest/yay/pkg/text"

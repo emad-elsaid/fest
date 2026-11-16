@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	alpm "github.com/Jguer/go-alpm/v2"
+	alpm "github.com/emad-elsaid/fest/yay/pkg/alpm"
 	"github.com/leonelquinteros/gotext"
 
 	"github.com/emad-elsaid/fest/yay/pkg/completion"
@@ -246,7 +246,7 @@ func handleHelp(ctx context.Context, run *runtime.Runtime, cmdArgs *parser.Argum
 }
 
 func handleVersion(logger *text.Logger) {
-	logger.Printf("yay v%s - libalpm v%s\n", yayVersion, alpm.Version())
+	logger.Printf("yay v%s - pure Go alpm backend\n", yayVersion)
 }
 
 func handlePrint(ctx context.Context, run *runtime.Runtime, cmdArgs *parser.Arguments, dbExecutor db.Executor) error {

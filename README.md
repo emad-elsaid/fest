@@ -38,7 +38,9 @@ Before using this framework, ensure you have:
 1. Arch Linux system
 2. Go 1.26+ installed
 
-**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management and a pure Go reimplementation of [GNU Stow](https://www.gnu.org/software/stow/) for dotfiles. No separate yay or stow installation is required.
+fest is pure Go: no C toolchain, libalpm headers, or `CGO_ENABLED=1` are required.
+
+**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management and a pure Go reimplementation of [GNU Stow](https://www.gnu.org/software/stow/) for dotfiles. yay's package database reads are also pure Go, so no separate yay, stow, or libalpm development files are required.
 
 ### Quick Start
 

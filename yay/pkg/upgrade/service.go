@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/Jguer/aur"
-	"github.com/Jguer/go-alpm/v2"
+	"github.com/emad-elsaid/fest/yay/pkg/alpm"
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/leonelquinteros/gotext"
 
