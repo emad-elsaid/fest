@@ -265,6 +265,12 @@ func (ae *AlpmExecutor) SyncUpgrades(enableDowngrade bool) (map[string]db.SyncUp
 	upgrades := make(map[string]db.SyncUpgrade)
 
 	for _, localPkg := range ae.localPkgs {
+		// A package already selected as a replacement must not be replaced by a
+		// later literal upgrade from another repository.
+		if _, selected := upgrades[localPkg.Name()]; selected {
+			continue
+		}
+
 		for _, index := range ae.syncIndexes {
 			syncDB := index.db
 

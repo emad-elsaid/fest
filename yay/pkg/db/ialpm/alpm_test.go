@@ -267,6 +267,34 @@ func TestSyncUpgradesPromotesReplacerReason(t *testing.T) {
 	assert.Equal(t, alpm.PkgReasonExplicit, upgrades["new"].Reason)
 }
 
+func TestSyncUpgradesKeepsSelectedReplacement(t *testing.T) {
+	t.Parallel()
+
+	dbPath := t.TempDir()
+	writeLocalPackage(t, dbPath, localPackage{name: "aaa", version: "1.0-1"})
+	writeLocalPackage(t, dbPath, localPackage{name: "zzz", version: "1.0-1"})
+	writeSyncDB(t, dbPath, "core", []syncPackage{{name: "zzz", version: "2.0-1"}})
+	writeSyncDB(t, dbPath, "extra", []syncPackage{
+		{name: "zzz", version: "3.0-1", replaces: []string{"aaa"}},
+	})
+
+	conf := &pacmanconf.Config{
+		DBPath: dbPath,
+		Repos: []pacmanconf.Repository{
+			{Name: "core"},
+			{Name: "extra"},
+		},
+	}
+
+	executor, err := NewExecutor(conf, text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), false, "test"))
+	require.NoError(t, err)
+
+	upgrades, err := executor.SyncUpgrades(false)
+	require.NoError(t, err)
+	require.Contains(t, upgrades, "zzz")
+	assert.Equal(t, "3.0-1", upgrades["zzz"].Package.Version())
+}
+
 func TestSatisfierFromDBMissingRepo(t *testing.T) {
 	t.Parallel()
 
