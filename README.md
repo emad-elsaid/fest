@@ -40,7 +40,7 @@ Before using this framework, ensure you have:
 
 fest is pure Go: no C toolchain, libalpm headers, or `CGO_ENABLED=1` are required.
 
-**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management and a pure Go reimplementation of [GNU Stow](https://www.gnu.org/software/stow/) for dotfiles. yay's package database reads are also pure Go, so no separate yay, stow, or libalpm development files are required.
+**Note**: This project includes an embedded copy of [yay](https://github.com/Jguer/yay) for AUR package management and a pure Go reimplementation of [GNU Stow](https://www.gnu.org/software/stow/) for dotfiles. yay's package database reads are also pure Go, so no separate yay, stow, or libalpm development files are required. The `expac`, `fd`, and `diff` functionality fest needs is likewise implemented in-process, so those binaries are not required either.
 
 ### Quick Start
 

@@ -6,8 +6,8 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/emad-elsaid/fest/diffutils"
 	"github.com/emad-elsaid/fest/stow"
-	"github.com/emad-elsaid/types"
 	"github.com/manifoldco/promptui"
 )
 
@@ -226,8 +226,6 @@ func (u userStow) showDiff(targetPath, stowPath string) error {
 		return nil
 	}
 
-	// diff returns non-zero when files differ, so we ignore the error
-	_ = types.Cmd("diff", "-u", stowPath, targetPath).Interactive().Run()
-
-	return nil
+	// Diffs are informational; the caller reports any failure as a warning.
+	return diffutils.Files(os.Stdout, stowPath, targetPath)
 }

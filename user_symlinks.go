@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/emad-elsaid/fest/fd"
 	"github.com/emad-elsaid/types"
 	"github.com/samber/lo"
 )
@@ -65,16 +66,19 @@ func (u symlinks) Match(want, have string) bool                  { return want =
 func (u symlinks) GetDependencies() (map[string][]string, error) { return nil, nil }
 func (u symlinks) SaveAsGo([]string) error                       { return nil }
 
-// filterBrokenSymlinks is a PipeFn that filters symlink paths from stdin,
-// keeping only broken symlinks (where the target doesn't exist).
+// filterBrokenSymlinks filters a newline-separated list of paths, keeping only
+// broken symlinks (where the target doesn't exist).
 func (u symlinks) filterBrokenSymlinks(stdin string) (stdout, stderr string, err error) {
 	var broken []string
 
 	for link := range strings.Lines(stdin) {
 		link = strings.TrimSpace(link)
+		if link == "" {
+			continue
+		}
 		// Skip ignored files
 		if lo.ContainsBy(ignoreFiles, func(ignore string) bool {
-			return strings.HasSuffix(link, "/"+ignore) || filepath.Base(link) == ignore
+			return filepath.Base(link) == ignore
 		}) {
 			continue
 		}
@@ -89,29 +93,21 @@ func (u symlinks) filterBrokenSymlinks(stdin string) (stdout, stderr string, err
 	return strings.Join(broken, "\n"), "", nil
 }
 
-// findBrokenSymlinks uses fd piped to a Go filter function to efficiently find broken symlinks.
-// The walk is read-only and the scanned directories are world-readable, so no
-// elevated privileges are required.
-// Requires: fd (installed via pacman/yay)
+// findBrokenSymlinks walks searchPath looking for symlinks and keeps the ones
+// whose target cannot be resolved. The walk is read-only and the scanned
+// directories are world-readable, so no elevated privileges are required.
 func (u symlinks) findBrokenSymlinks(searchPath string) ([]string, error) {
-	args := []string{"--type", "l", "--absolute-path", "--no-ignore"}
-
-	// Add excluded directories
-	for _, dir := range ignoredDirs {
-		args = append(args, "--exclude", dir)
-	}
-
-	// Add search path at the end
-	args = append(args, ".", searchPath)
-
-	cmd := types.Cmd("fd", args...).PipeFn(u.filterBrokenSymlinks)
-
-	out := cmd.Stdout()
-	if err := cmd.Error(); err != nil {
+	links, err := fd.Symlinks(searchPath, ignoredDirs)
+	if err != nil {
 		return nil, err
 	}
 
-	result := strings.TrimSpace(out)
+	stdout, _, err := u.filterBrokenSymlinks(strings.Join(links, "\n"))
+	if err != nil {
+		return nil, err
+	}
+
+	result := strings.TrimSpace(stdout)
 	if result == "" {
 		return []string{}, nil
 	}

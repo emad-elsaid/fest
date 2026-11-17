@@ -68,6 +68,9 @@ go mod verify        # Verify dependencies
 ├── user_stow.go          # Dotfile manager using the stow subpackage
 ├── user_symlinks.go      # Broken symlink cleanup
 ├── stow/                 # Pure Go GNU Stow-compatible symlink farm engine
+├── expac/                # Pure Go local pacman DB reader (replaces expac)
+├── fd/                   # Pure Go symlink walker (replaces fd)
+├── diffutils/            # Pure Go unified diff writer (replaces diff)
 ├── yay/                  # Vendored copy of yay (AUR helper), GPL v3
 │   └── pkg/              # yay internal subpackages (db, dep, settings, sync, ...)
 │       ├── alpm/         # Pure Go pacman data model (replaces go-alpm/libalpm)
