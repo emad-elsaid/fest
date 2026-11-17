@@ -60,6 +60,35 @@ func TestDBPath(t *testing.T) {
 	require.Equal(t, DefaultDBPath, dbPath(filepath.Join(t.TempDir(), "missing")))
 }
 
+func TestDBPathFromInclude(t *testing.T) {
+	dir := t.TempDir()
+
+	included := filepath.Join(dir, "dbpath.conf")
+	require.NoError(t, os.WriteFile(included, []byte("DBPath = /included/db\n"), 0o644))
+
+	confPath := filepath.Join(dir, "pacman.conf")
+	require.NoError(t, os.WriteFile(confPath,
+		[]byte("[options]\nInclude = "+included+"\n"), 0o644))
+
+	require.Equal(t, "/included/db", dbPath(confPath))
+}
+
+func TestDBPathFromIncludeGlob(t *testing.T) {
+	dir := t.TempDir()
+	confDir := filepath.Join(dir, "conf.d")
+	require.NoError(t, os.MkdirAll(confDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(confDir, "10-base.conf"),
+		[]byte("DBPath = /first\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(confDir, "20-override.conf"),
+		[]byte("DBPath = /second\n"), 0o644))
+
+	confPath := filepath.Join(dir, "pacman.conf")
+	require.NoError(t, os.WriteFile(confPath,
+		[]byte("[options]\nInclude = "+filepath.Join(confDir, "*.conf")+"\n"), 0o644))
+
+	require.Equal(t, "/second", dbPath(confPath), "the last glob match wins, like pacman")
+}
+
 func writeDesc(t *testing.T, dbPath, entry, contents string) {
 	t.Helper()
 

@@ -5,6 +5,7 @@ package expac
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,17 +29,66 @@ func ConfiguredDBPath() string {
 // dbPath returns the database path configured in the given pacman.conf, falling
 // back to DefaultDBPath when the file cannot be read or does not set DBPath.
 func dbPath(confPath string) string {
-	data, err := os.ReadFile(confPath)
+	config, err := readConfig(confPath, 0)
 	if err != nil {
 		return DefaultDBPath
 	}
 
-	conf, err := pacmanconf.Parse(string(data))
+	conf, err := pacmanconf.Parse(config)
 	if err != nil || conf.DBPath == "" {
 		return DefaultDBPath
 	}
 
 	return conf.DBPath
+}
+
+// maxIncludeDepth bounds recursive Include directives so include cycles cannot
+// loop forever.
+const maxIncludeDepth = 10
+
+// readConfig reads a pacman.conf and expands Include directives in place, so
+// options in included files (and mirrorlists in repository sections) are parsed
+// in their original section context.
+func readConfig(path string, depth int) (string, error) {
+	if depth > maxIncludeDepth {
+		return "", fmt.Errorf("too many nested includes: %s", path)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+
+	var expanded strings.Builder
+
+	for line := range strings.Lines(string(data)) {
+		line = strings.TrimSuffix(line, "\n")
+
+		key, value, ok := strings.Cut(line, "=")
+		if ok && strings.EqualFold(strings.TrimSpace(key), "Include") {
+			matches, err := filepath.Glob(strings.TrimSpace(value))
+			if err != nil {
+				return "", err
+			}
+
+			for _, match := range matches {
+				included, err := readConfig(match, depth+1)
+				if err != nil {
+					return "", err
+				}
+
+				expanded.WriteString(included)
+				expanded.WriteByte('\n')
+			}
+
+			continue
+		}
+
+		expanded.WriteString(line)
+		expanded.WriteByte('\n')
+	}
+
+	return expanded.String(), nil
 }
 
 // Package holds the installed package metadata that fest's dependency graph
