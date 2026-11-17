@@ -103,16 +103,15 @@ func header(file File) string {
 // splitLines splits data into lines, preserving the distinction between a file
 // that ends with a newline and one that does not.
 func splitLines(data []byte) []string {
-	if len(data) == 0 {
-		return nil
+	var lines []string
+
+	for line := range strings.Lines(string(data)) {
+		lines = append(lines, strings.TrimSuffix(line, "\n"))
 	}
 
-	lines := strings.Split(string(data), "\n")
-	if lines[len(lines)-1] == "" {
-		return lines[:len(lines)-1]
+	if len(lines) > 0 && data[len(data)-1] != '\n' {
+		lines[len(lines)-1] += noNewline
 	}
-
-	lines[len(lines)-1] += noNewline
 
 	return lines
 }
@@ -215,8 +214,7 @@ func writeHunk(w io.Writer, operations []op, oldLines, newLines []int, start int
 			prefix = '+'
 		}
 
-		missingNewline := strings.HasSuffix(operation.text, noNewline)
-		text := strings.TrimSuffix(operation.text, noNewline)
+		text, missingNewline := strings.CutSuffix(operation.text, noNewline)
 
 		if _, err := fmt.Fprintf(w, "%c%s\n", prefix, text); err != nil {
 			return err

@@ -24,8 +24,7 @@ virtual=1.0
 	writeDesc(t, dbPath, "bar-2.0-1", `%NAME%
 bar
 %VERSION%
-2.0-1
-`)
+2.0-1`)
 
 	// A file where a package directory is expected must be ignored.
 	require.NoError(t, os.WriteFile(filepath.Join(dbPath, "local", "stray"), []byte("x"), 0o644))

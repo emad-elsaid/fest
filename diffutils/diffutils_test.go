@@ -77,6 +77,22 @@ func TestUnified(t *testing.T) {
 `,
 		},
 		{
+			name: "removing a single empty line",
+			from: "\n",
+			to:   "",
+			expected: `@@ -1 +0,0 @@
+-
+`,
+		},
+		{
+			name: "adding a single empty line",
+			from: "",
+			to:   "\n",
+			expected: `@@ -0,0 +1 @@
++
+`,
+		},
+		{
 			name: "insertion into empty file",
 			from: "",
 			to:   "x\ny\n",

@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/emad-elsaid/fest/fd"
 	"github.com/emad-elsaid/types"
-	"github.com/samber/lo"
 )
 
 const ResourceBrokenSymlinks ResourceName = "broken symlinks"
@@ -66,33 +66,6 @@ func (u symlinks) Match(want, have string) bool                  { return want =
 func (u symlinks) GetDependencies() (map[string][]string, error) { return nil, nil }
 func (u symlinks) SaveAsGo([]string) error                       { return nil }
 
-// filterBrokenSymlinks filters a newline-separated list of paths, keeping only
-// broken symlinks (where the target doesn't exist).
-func (u symlinks) filterBrokenSymlinks(stdin string) (stdout, stderr string, err error) {
-	var broken []string
-
-	for link := range strings.Lines(stdin) {
-		link = strings.TrimSpace(link)
-		if link == "" {
-			continue
-		}
-		// Skip ignored files
-		if lo.ContainsBy(ignoreFiles, func(ignore string) bool {
-			return filepath.Base(link) == ignore
-		}) {
-			continue
-		}
-
-		// A symlink is broken when its target cannot be resolved, for any reason
-		// (ENOENT, ELOOP, ENOTDIR, EACCES, ...).
-		if _, statErr := os.Stat(link); statErr != nil {
-			broken = append(broken, link)
-		}
-	}
-
-	return strings.Join(broken, "\n"), "", nil
-}
-
 // findBrokenSymlinks walks searchPath looking for symlinks and keeps the ones
 // whose target cannot be resolved. The walk is read-only and the scanned
 // directories are world-readable, so no elevated privileges are required.
@@ -102,17 +75,26 @@ func (u symlinks) findBrokenSymlinks(searchPath string) ([]string, error) {
 		return nil, err
 	}
 
-	stdout, _, err := u.filterBrokenSymlinks(strings.Join(links, "\n"))
-	if err != nil {
-		return nil, err
-	}
+	return brokenLinks(links), nil
+}
 
-	result := strings.TrimSpace(stdout)
-	if result == "" {
-		return []string{}, nil
-	}
+// brokenLinks keeps the non-ignored links whose target cannot be resolved.
+func brokenLinks(links []string) []string {
+	return slices.DeleteFunc(append([]string{}, links...), func(link string) bool {
+		return isIgnoredLink(link) || !isBrokenLink(link)
+	})
+}
 
-	return strings.Split(result, "\n"), nil
+// isIgnoredLink reports whether the link names one of the files to ignore.
+func isIgnoredLink(link string) bool {
+	return slices.Contains(ignoreFiles, filepath.Base(link))
+}
+
+// isBrokenLink reports whether the link's target cannot be resolved, for any
+// reason (ENOENT, ELOOP, ENOTDIR, EACCES, ...).
+func isBrokenLink(link string) bool {
+	_, err := os.Stat(link)
+	return err != nil
 }
 
 func (u symlinks) ListInstalled() ([]string, error) {

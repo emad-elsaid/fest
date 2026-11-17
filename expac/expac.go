@@ -4,12 +4,11 @@
 package expac
 
 import (
-	"bufio"
 	"errors"
-	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DefaultDBPath is the default location of pacman's database on Arch Linux.
@@ -65,24 +64,21 @@ func Local(dbPath string) ([]Package, error) {
 
 // readDesc parses pacman's %KEY% value block format.
 func readDesc(path string) (map[string][]string, error) {
-	file, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
 
-	return parseDesc(file)
+	return parseDesc(string(data)), nil
 }
 
 // parseDesc parses pacman's %KEY% value block format.
-func parseDesc(reader io.Reader) (map[string][]string, error) {
+func parseDesc(data string) map[string][]string {
 	fields := make(map[string][]string)
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
 
 	key := ""
-	for scanner.Scan() {
-		line := scanner.Text()
+	for line := range strings.Lines(data) {
+		line = strings.TrimSuffix(line, "\n")
 
 		if len(line) > 2 && line[0] == '%' && line[len(line)-1] == '%' {
 			key = line[1 : len(line)-1]
@@ -99,7 +95,7 @@ func parseDesc(reader io.Reader) (map[string][]string, error) {
 		}
 	}
 
-	return fields, scanner.Err()
+	return fields
 }
 
 // first returns the first value for key, or an empty string when absent.

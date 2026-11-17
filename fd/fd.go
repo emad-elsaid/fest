@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -70,23 +71,17 @@ func Symlinks(root string, excludes []string) ([]string, error) {
 
 // excluded reports whether name or rel matches any of the patterns.
 func excluded(name, rel string, patterns []string) bool {
-	for _, pattern := range patterns {
+	return slices.ContainsFunc(patterns, func(pattern string) bool {
 		pattern = filepath.ToSlash(pattern)
 
 		if strings.Contains(pattern, "/") {
 			if matched, err := path.Match(pattern, rel); err == nil && matched {
 				return true
 			}
-			if strings.HasSuffix(rel, "/"+pattern) {
-				return true
-			}
-			continue
+			return strings.HasSuffix(rel, "/"+pattern)
 		}
 
-		if matched, err := path.Match(pattern, name); err == nil && matched {
-			return true
-		}
-	}
-
-	return false
+		matched, err := path.Match(pattern, name)
+		return err == nil && matched
+	})
 }
