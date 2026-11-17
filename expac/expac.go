@@ -101,9 +101,9 @@ type Package struct {
 
 // Local returns metadata for every package in the local pacman database under
 // dbPath. A missing database is reported as an empty slice so callers on
-// non-pacman systems get a usable, if empty, result. Entries with an
-// unreadable desc file are skipped, mirroring libalpm's tolerance of a
-// partially corrupt local database.
+// non-pacman systems get a usable, if empty, result. Any unreadable entry is an
+// error: an incomplete dependency graph could cause wanted packages' dependencies
+// to be treated as removable.
 func Local(dbPath string) ([]Package, error) {
 	entries, err := os.ReadDir(filepath.Join(dbPath, "local"))
 	if err != nil {
@@ -121,12 +121,12 @@ func Local(dbPath string) ([]Package, error) {
 
 		fields, err := readDesc(filepath.Join(dbPath, "local", entry.Name(), "desc"))
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to read pacman database entry %s: %w", entry.Name(), err)
 		}
 
 		name := first(fields, "NAME")
 		if name == "" {
-			continue
+			return nil, fmt.Errorf("pacman database entry %s: missing NAME", entry.Name())
 		}
 
 		packages = append(packages, Package{

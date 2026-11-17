@@ -29,9 +29,6 @@ bar
 	// A file where a package directory is expected must be ignored.
 	require.NoError(t, os.WriteFile(filepath.Join(dbPath, "local", "stray"), []byte("x"), 0o644))
 
-	// A directory without a desc file must be skipped.
-	require.NoError(t, os.MkdirAll(filepath.Join(dbPath, "local", "broken-1.0-1"), 0o755))
-
 	packages, err := Local(dbPath)
 	require.NoError(t, err)
 
@@ -39,6 +36,18 @@ bar
 		{Name: "foo", Depends: []string{"bar>=1.0", "baz"}, Provides: []string{"virtual=1.0"}},
 		{Name: "bar"},
 	}, packages)
+}
+
+func TestLocalRejectsUnreadableEntry(t *testing.T) {
+	dbPath := t.TempDir()
+	writeDesc(t, dbPath, "foo-1.0-1", "%NAME%\nfoo\n")
+
+	// A package directory without a desc file would silently drop its
+	// dependencies, so it must fail the whole read.
+	require.NoError(t, os.MkdirAll(filepath.Join(dbPath, "local", "broken-1.0-1"), 0o755))
+
+	_, err := Local(dbPath)
+	require.Error(t, err)
 }
 
 func TestLocalMissingDatabase(t *testing.T) {
