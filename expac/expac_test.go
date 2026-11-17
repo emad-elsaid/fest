@@ -47,6 +47,19 @@ func TestLocalMissingDatabase(t *testing.T) {
 	require.Empty(t, packages)
 }
 
+func TestDBPath(t *testing.T) {
+	confPath := filepath.Join(t.TempDir(), "pacman.conf")
+
+	require.NoError(t, os.WriteFile(confPath,
+		[]byte("[options]\nDBPath = /custom/pacman\n"), 0o644))
+	require.Equal(t, "/custom/pacman", dbPath(confPath))
+
+	require.NoError(t, os.WriteFile(confPath, []byte("[options]\n"), 0o644))
+	require.Equal(t, DefaultDBPath, dbPath(confPath))
+
+	require.Equal(t, DefaultDBPath, dbPath(filepath.Join(t.TempDir(), "missing")))
+}
+
 func writeDesc(t *testing.T, dbPath, entry, contents string) {
 	t.Helper()
 

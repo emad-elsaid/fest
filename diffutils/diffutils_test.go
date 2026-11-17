@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -173,6 +174,25 @@ func TestUnifiedTrimsCommonPrefixAndSuffix(t *testing.T) {
 `, buffer.String())
 }
 
+func TestUnifiedSparseLargeEdits(t *testing.T) {
+	var buffer bytes.Buffer
+
+	err := Unified(
+		&buffer,
+		File{Name: "old"},
+		File{Name: "new"},
+		[]byte(numbered(5000, map[int]string{2: "old-two", 4999: "old-end"})),
+		[]byte(numbered(5000, map[int]string{4999: "new-end"})),
+	)
+	require.NoError(t, err)
+
+	// Edits far apart must stay minimal instead of falling back to replacing
+	// the whole span between them.
+	require.Contains(t, buffer.String(), "@@ -1,5 +1,5 @@")
+	require.Contains(t, buffer.String(), "@@ -4996,5 +4996,5 @@")
+	require.Less(t, buffer.Len(), 1000)
+}
+
 func TestUnifiedBinary(t *testing.T) {
 	var buffer bytes.Buffer
 
@@ -221,6 +241,24 @@ func TestFiles(t *testing.T) {
 	require.Contains(t, buffer.String(), "--- "+from+"\t")
 	require.Contains(t, buffer.String(), "+++ "+to+"\t")
 	require.Contains(t, buffer.String(), "@@ -1 +1 @@\n-a\n+b\n")
+}
+
+func TestFilesRejectsNonRegular(t *testing.T) {
+	dir := t.TempDir()
+	regular := filepath.Join(dir, "regular")
+	require.NoError(t, os.WriteFile(regular, []byte("x\n"), 0o644))
+
+	fifo := filepath.Join(dir, "fifo")
+	require.NoError(t, syscall.Mkfifo(fifo, 0o600))
+
+	var buffer bytes.Buffer
+
+	require.Error(t, Files(&buffer, fifo, regular), "a FIFO must be rejected without blocking")
+	require.Error(t, Files(&buffer, regular, dir), "a directory must be rejected")
+
+	if _, err := os.Stat("/dev/zero"); err == nil {
+		require.Error(t, Files(&buffer, "/dev/zero", regular), "a device must be rejected")
+	}
 }
 
 // numbered builds n lines of "1".."n", replacing lines named in changes.

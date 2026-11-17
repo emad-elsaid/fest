@@ -122,7 +122,7 @@ func (p *pacman) Update() error {
 }
 
 func (p pacman) GetDependencies() (map[string][]string, error) {
-	installed, err := expac.Local(expac.DefaultDBPath)
+	installed, err := expac.Local(expac.ConfiguredDBPath())
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pacman local database: %w", err)
 	}

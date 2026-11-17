@@ -9,10 +9,37 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	pacmanconf "github.com/Morganamilo/go-pacmanconf"
 )
 
 // DefaultDBPath is the default location of pacman's database on Arch Linux.
 const DefaultDBPath = "/var/lib/pacman"
+
+// pacmanConfPath is pacman's default configuration file.
+const pacmanConfPath = "/etc/pacman.conf"
+
+// ConfiguredDBPath returns the database path configured in the system's
+// pacman.conf, falling back to DefaultDBPath.
+func ConfiguredDBPath() string {
+	return dbPath(pacmanConfPath)
+}
+
+// dbPath returns the database path configured in the given pacman.conf, falling
+// back to DefaultDBPath when the file cannot be read or does not set DBPath.
+func dbPath(confPath string) string {
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		return DefaultDBPath
+	}
+
+	conf, err := pacmanconf.Parse(string(data))
+	if err != nil || conf.DBPath == "" {
+		return DefaultDBPath
+	}
+
+	return conf.DBPath
+}
 
 // Package holds the installed package metadata that fest's dependency graph
 // needs. Depends and Provides keep their pacman version constraints, if any.

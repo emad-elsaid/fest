@@ -41,6 +41,19 @@ func TestSymlinks(t *testing.T) {
 	}
 }
 
+func TestSymlinksSymlinkedRoot(t *testing.T) {
+	realRoot := t.TempDir()
+	require.NoError(t, os.Symlink("/nonexistent", filepath.Join(realRoot, "link")))
+
+	linkRoot := filepath.Join(t.TempDir(), "home")
+	require.NoError(t, os.Symlink(realRoot, linkRoot))
+
+	links, err := Symlinks(linkRoot, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{filepath.Join(linkRoot, "link")}, links,
+		"paths must stay under the caller's root")
+}
+
 func TestSymlinksMissingRoot(t *testing.T) {
 	_, err := Symlinks(filepath.Join(t.TempDir(), "missing"), nil)
 	require.Error(t, err)

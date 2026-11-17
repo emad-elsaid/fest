@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -39,30 +40,53 @@ type op struct {
 	text string
 }
 
-// Files writes a unified diff of fromPath and toPath to w. Unlike diff, it
-// returns an error if either file cannot be read.
+// Files writes a unified diff of fromPath and toPath to w. It returns an error
+// when either path cannot be read or is not a regular file.
 func Files(w io.Writer, fromPath, toPath string) error {
-	fromData, err := os.ReadFile(fromPath)
+	fromData, fromTime, err := readRegular(fromPath)
 	if err != nil {
 		return err
 	}
 
-	toData, err := os.ReadFile(toPath)
+	toData, toTime, err := readRegular(toPath)
 	if err != nil {
 		return err
 	}
 
-	from := File{Name: fromPath}
-	if info, err := os.Stat(fromPath); err == nil {
-		from.Time = info.ModTime()
+	return Unified(
+		w,
+		File{Name: fromPath, Time: fromTime},
+		File{Name: toPath, Time: toTime},
+		fromData,
+		toData,
+	)
+}
+
+// readRegular reads a regular file and returns its contents and modification
+// time. Opening with O_NONBLOCK keeps a FIFO from blocking, and the mode check
+// rejects devices and FIFOs before any potentially unbounded read.
+func readRegular(path string) ([]byte, time.Time, error) {
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer file.Close()
+
+	info, err := file.Stat()
+	if err != nil {
+		return nil, time.Time{}, err
 	}
 
-	to := File{Name: toPath}
-	if info, err := os.Stat(toPath); err == nil {
-		to.Time = info.ModTime()
+	if !info.Mode().IsRegular() {
+		return nil, time.Time{}, fmt.Errorf("%s: not a regular file", path)
 	}
 
-	return Unified(w, from, to, fromData, toData)
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+
+	return data, info.ModTime(), nil
 }
 
 // Unified writes a unified diff of fromData and toData to w, labelling the
@@ -240,8 +264,10 @@ func lineRange(start, count int) string {
 	return fmt.Sprintf("%d,%d", start, count)
 }
 
-// maxEditDistance bounds Myers' trace size. Larger differences fall back to a
-// full replacement, which is still a valid diff and keeps memory bounded.
+// maxEditDistance caps Myers' search depth. The trace grows with the square of
+// the depth, so searches that go deeper fall back to a full replacement, which
+// is still a valid diff and keeps memory bounded. Sparse edits in large files
+// stay cheap because the search is capped by edit distance, not input length.
 const maxEditDistance = 2000
 
 // editScript computes a shortest edit script between a and b, keeping the
@@ -277,15 +303,13 @@ func editScript(a, b []string) []op {
 func myers(a, b []string) []op {
 	n, m := len(a), len(b)
 	maxD := n + m
-	if maxD > maxEditDistance {
-		return replaceAll(a, b)
-	}
+	limit := min(maxD, maxEditDistance)
 
-	offset := maxD + 1
-	v := make([]int, 2*maxD+3)
-	trace := make([][]int, 0, maxD+1)
+	offset := limit + 1
+	v := make([]int, 2*limit+3)
+	trace := make([][]int, 0, limit+1)
 
-	for d := 0; d <= maxD; d++ {
+	for d := 0; d <= limit; d++ {
 		// Snapshot only k in [-d-1, d+1]; the outermost entries stay zero.
 		snapshot := make([]int, 2*d+3)
 		for k := -d; k <= d; k++ {

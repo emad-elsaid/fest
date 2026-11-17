@@ -25,28 +25,39 @@ func Symlinks(root string, excludes []string) ([]string, error) {
 		return nil, err
 	}
 
+	// A symlinked root (for example a symlinked home directory) must be
+	// resolved before walking, otherwise WalkDir only visits the root itself.
+	// Symlinks inside the tree are still not followed.
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+
 	var links []string
 
-	err = filepath.WalkDir(root, func(entryPath string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			// Report a root-level failure, but skip unreadable entries inside
-			// the tree instead of aborting the whole scan.
-			if entryPath == root {
+	err = filepath.WalkDir(resolved, func(resolvedPath string, entry fs.DirEntry, walkErr error) error {
+		rel, relErr := filepath.Rel(resolved, resolvedPath)
+		if relErr != nil {
+			return relErr
+		}
+
+		if rel == "." {
+			if walkErr != nil {
 				return walkErr
 			}
+			return nil
+		}
+
+		// Keep paths under the caller's original root.
+		entryPath := filepath.Join(root, rel)
+
+		if walkErr != nil {
+			// Skip unreadable entries inside the tree instead of aborting the
+			// whole scan.
 			if entry != nil && entry.IsDir() {
 				return fs.SkipDir
 			}
 			return nil
-		}
-
-		if entryPath == root {
-			return nil
-		}
-
-		rel, relErr := filepath.Rel(root, entryPath)
-		if relErr != nil {
-			rel = entry.Name()
 		}
 
 		if excluded(entry.Name(), filepath.ToSlash(rel), excludes) {
