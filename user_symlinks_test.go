@@ -3,15 +3,13 @@ package fest
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-// TestFilterBrokenSymlinks_IgnoreFilesMatchesPartialNames tests the bug where
-// filterBrokenSymlinks incorrectly filters symlinks whose names END with an ignore
-// pattern, even if they're not exactly the ignored filename.
+// TestFilterBrokenSymlinks_IgnoreFilesMatchesPartialNames tests that ignore
+// rules match exact file names, not suffixes of them.
 func TestFilterBrokenSymlinks_IgnoreFilesMatchesPartialNames(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -23,24 +21,9 @@ func TestFilterBrokenSymlinks_IgnoreFilesMatchesPartialNames(t *testing.T) {
 	brokenNormalSymlink := filepath.Join(tmpDir, "normal_link")
 	require.NoError(t, os.Symlink("/nonexistent/target2", brokenNormalSymlink))
 
-	u := symlinks{}
-	stdin := strings.Join([]string{
-		brokenPrefixedSymlink,
-		brokenNormalSymlink,
-	}, "\n")
+	broken := brokenLinks([]string{brokenPrefixedSymlink, brokenNormalSymlink})
 
-	stdout, stderr, err := u.filterBrokenSymlinks(stdin)
-	require.NoError(t, err)
-	require.Empty(t, stderr)
-
-	broken := strings.Split(strings.TrimSpace(stdout), "\n")
-
-	// BUG: filterBrokenSymlinks checks: strings.HasSuffix(link, ignore)
-	// This matches "/path/MySingletonCookie" because it ends with "SingletonCookie"
-	// But we probably only want to ignore files literally named "SingletonCookie"
-
-	// Currently, MySingletonCookie gets incorrectly filtered out
-	// This test will FAIL because the function incorrectly matches partial names
+	// Ignore rules must match the exact file name, not a suffix of it.
 	require.Len(t, broken, 2, "Both broken symlinks should be included")
 	require.Contains(t, broken, brokenPrefixedSymlink,
 		"MySingletonCookie should not be ignored just because it ends with 'SingletonCookie'")
@@ -48,10 +31,10 @@ func TestFilterBrokenSymlinks_IgnoreFilesMatchesPartialNames(t *testing.T) {
 }
 
 // A symlink whose target cannot be resolved is broken no matter which errno
-// resolution fails with. filterBrokenSymlinks only treats os.IsNotExist errors
-// as broken, so it silently drops symlink loops (ELOOP) and symlinks that
-// traverse a non-directory component (ENOTDIR), leaving them on disk forever.
-func TestUserSymlinksBugFilterBrokenSymlinksMissesNonENOENTBrokenLinks(t *testing.T) {
+// resolution fails with. brokenLinks must report symlink loops (ELOOP) and
+// symlinks that traverse a non-directory component (ENOTDIR), while leaving
+// healthy links alone.
+func TestBrokenLinksReportsNonENOENTFailures(t *testing.T) {
 	dir := t.TempDir()
 
 	// Self-referential symlink: os.Stat returns ELOOP, not ENOENT.
@@ -70,17 +53,9 @@ func TestUserSymlinksBugFilterBrokenSymlinksMissesNonENOENTBrokenLinks(t *testin
 	healthy := filepath.Join(dir, "healthy")
 	require.NoError(t, os.Symlink(target, healthy))
 
-	stdin := strings.Join([]string{loop, throughFile, healthy}, "\n")
+	stdin := []string{loop, throughFile, healthy}
 
-	u := symlinks{}
-	stdout, _, err := u.filterBrokenSymlinks(stdin)
-	require.NoError(t, err)
-
-	broken := []string{}
-	if strings.TrimSpace(stdout) != "" {
-		broken = strings.Split(strings.TrimSpace(stdout), "\n")
-	}
-
+	broken := brokenLinks(stdin)
 	require.Contains(t, broken, loop, "a symlink loop is broken and must be reported")
 	require.Contains(t, broken, throughFile, "a symlink through a non-directory is broken and must be reported")
 	require.NotContains(t, broken, healthy, "a healthy symlink must not be reported")

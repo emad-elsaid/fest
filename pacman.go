@@ -3,12 +3,12 @@ package fest
 import "github.com/emad-elsaid/types"
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/emad-elsaid/fest/expac"
 	"github.com/emad-elsaid/fest/yay"
 	"github.com/samber/lo"
 )
@@ -122,32 +122,26 @@ func (p *pacman) Update() error {
 }
 
 func (p pacman) GetDependencies() (map[string][]string, error) {
-	stdout, err := types.Cmd("expac", "-Q", "%n|%D|%S").StdoutErr()
+	installed, err := expac.Local(expac.ConfiguredDBPath())
 	if err != nil {
-		return nil, fmt.Errorf("failed to run expac: %w", err)
+		return nil, fmt.Errorf("failed to read pacman local database: %w", err)
 	}
 	deps := make(map[string][]string)
 	provides := make(map[string][]string)
 	stripVersion := func(s string) string {
-		return strings.FieldsFunc(s, func(r rune) bool { return r == '>' || r == '<' || r == '=' })[0]
+		if index := strings.IndexAny(s, "><="); index >= 0 {
+			return s[:index]
+		}
+		return s
 	}
-	scanner := bufio.NewScanner(strings.NewReader(stdout))
-	for scanner.Scan() {
-		parts := strings.Split(scanner.Text(), "|")
-		if len(parts) != 3 {
-			continue
+	for _, pkg := range installed {
+		for _, dep := range pkg.Depends {
+			deps[pkg.Name] = append(deps[pkg.Name], stripVersion(dep))
 		}
-		pkg := strings.TrimSpace(parts[0])
-		if parts[1] != "-" && parts[1] != "" {
-			for dep := range strings.FieldsSeq(parts[1]) {
-				deps[pkg] = append(deps[pkg], stripVersion(dep))
-			}
-		}
-		provides[pkg] = append(provides[pkg], pkg)
-		if parts[2] != "-" && parts[2] != "" {
-			for prov := range strings.FieldsSeq(parts[2]) {
-				provides[stripVersion(prov)] = append(provides[stripVersion(prov)], pkg)
-			}
+		provides[pkg.Name] = append(provides[pkg.Name], pkg.Name)
+		for _, prov := range pkg.Provides {
+			name := stripVersion(prov)
+			provides[name] = append(provides[name], pkg.Name)
 		}
 	}
 	// Resolve virtual packages to real packages
@@ -165,7 +159,7 @@ func (p pacman) GetDependencies() (map[string][]string, error) {
 			resolved[pkg] = append(resolved[pkg], dep)
 		}
 	}
-	return resolved, scanner.Err()
+	return resolved, nil
 }
 
 func (p pacman) SaveAsGo(wanted []string) error {

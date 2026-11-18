@@ -31,7 +31,6 @@ func (d dependency) pkg() string {
 var dependencies = []dependency{
 	// Core package management (critical)
 	{Name: "pacman", Required: true},
-	{Name: "expac", PackageName: "expac", Required: true},
 
 	// Build tools (critical for this program)
 	{Name: "go", PackageName: "go", Required: true},
@@ -47,12 +46,10 @@ var dependencies = []dependency{
 	{Name: "sudo", Required: true},
 
 	// File manipulation tools (usually in base system)
-	{Name: "diff", PackageName: "diffutils", Required: true},
 	{Name: "tee", PackageName: "coreutils", Required: true},
 	{Name: "cat", PackageName: "coreutils", Required: true},
 	{Name: "chmod", PackageName: "coreutils", Required: true},
 	{Name: "mkdir", PackageName: "coreutils", Required: true},
-	{Name: "fd", PackageName: "fd", Required: true},
 
 	// Language runtimes (optional features)
 	{Name: "ruby", PackageName: "ruby", Required: false},
