@@ -58,3 +58,41 @@ func TestSymlinksMissingRoot(t *testing.T) {
 	_, err := Symlinks(filepath.Join(t.TempDir(), "missing"), nil)
 	require.Error(t, err)
 }
+
+// TestSymlinksNonDirectoryRoot verifies that a file root yields no links.
+func TestSymlinksNonDirectoryRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(root, nil, 0o644))
+
+	links, err := Symlinks(root, nil)
+	require.NoError(t, err)
+	require.Empty(t, links)
+}
+
+// TestSymlinksGlobAndNestedExcludes covers glob and root-relative excludes.
+func TestSymlinksGlobAndNestedExcludes(t *testing.T) {
+	root := t.TempDir()
+
+	link := func(name string) string {
+		t.Helper()
+		path := filepath.Join(root, name)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.Symlink("/nonexistent", path))
+		return path
+	}
+
+	wanted := []string{
+		link("kept"),
+		link("logs/kept.txt"),
+	}
+
+	link("debug.log")
+	link("logs/trace.log")
+	link("build/output/excluded")
+	link("nested/build/output/excluded")
+	link("nested/build/output/kept")
+
+	links, err := Symlinks(root, []string{"*.log", "build/output"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, wanted, links)
+}

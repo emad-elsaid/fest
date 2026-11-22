@@ -3,7 +3,7 @@ package fest
 import "github.com/emad-elsaid/types"
 
 import (
-	"bufio"
+	"debug/buildinfo"
 	"fmt"
 	"log/slog"
 	"os"
@@ -46,35 +46,22 @@ func (g goPackages) getGoBin() (string, error) {
 	return filepath.Join(gopath, "bin"), nil
 }
 
+// getBinaryModule returns the module and version a Go binary was built from.
 func (g goPackages) getBinaryModule(binPath string) (string, error) {
-	stdout, err := types.Cmd("go", "version", "-m", binPath).StdoutErr()
+	info, err := buildinfo.ReadFile(binPath)
 	if err != nil {
 		return "", err
 	}
 
-	var path, version string
-	scanner := bufio.NewScanner(strings.NewReader(stdout))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		switch parts[0] {
-		case "path":
-			path = parts[1]
-		case "mod":
-			if len(parts) >= 3 {
-				version = parts[2]
-			}
-		}
+	path := info.Path
+	if path == "" {
+		path = info.Main.Path
 	}
-
 	if path == "" {
 		return "", fmt.Errorf("no valid module path found")
 	}
 
+	version := info.Main.Version
 	if version == "(devel)" || version == "" {
 		version = "latest"
 	}

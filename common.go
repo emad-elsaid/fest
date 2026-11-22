@@ -178,30 +178,94 @@ func saveAsGoFile(filename, funcName string, items []string) error {
 	return os.WriteFile("save_"+filename, []byte(b.String()), 0644)
 }
 
+// systemdUnitCache memoizes enabled unit files for one systemd scope.
+type systemdUnitCache struct {
+	mu     sync.Mutex
+	user   bool
+	units  map[string][]string
+	cached bool
+	err    error
+}
+
+// list returns the enabled units of the given type.
+func (c *systemdUnitCache) list(unitType string) ([]string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.cached {
+		c.units, c.err = listEnabledUnits(c.user)
+		c.cached = c.err == nil
+	}
+	if c.err != nil {
+		return nil, c.err
+	}
+
+	return c.units[unitType], nil
+}
+
+// invalidate drops the cached result.
+func (c *systemdUnitCache) invalidate() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.units = nil
+	c.cached = false
+	c.err = nil
+}
+
+var systemdUnitCaches = map[bool]*systemdUnitCache{
+	false: {user: false},
+	true:  {user: true},
+}
+
+// invalidateSystemdCaches drops cached unit lists for both scopes.
+func invalidateSystemdCaches() {
+	for _, cache := range systemdUnitCaches {
+		cache.invalidate()
+	}
+}
+
 // listSystemdUnits returns enabled systemd units of the given type.
 // If user is true, lists user units; otherwise lists system units.
 func listSystemdUnits(unitType string, user bool) ([]string, error) {
-	args := []string{"list-unit-files", "--type=" + unitType, "--state=enabled", "--no-legend"}
+	return systemdUnitCaches[user].list(unitType)
+}
+
+// listEnabledUnits lists enabled unit files for a scope, grouped by unit type.
+func listEnabledUnits(user bool) (map[string][]string, error) {
+	args := []string{"list-unit-files", "--state=enabled", "--no-legend"}
 	if user {
 		args = append([]string{"--user"}, args...)
 	}
 
 	stdout, err := types.Cmd("systemctl", args...).StdoutErr()
 	if strings.TrimSpace(stdout) == "" {
-		return []string{}, nil
+		return map[string][]string{}, nil
 	}
-
 	if err != nil {
 		return nil, err
 	}
 
-	suffix := "." + unitType
-	var units []string
+	units := make(map[string][]string, 4)
 	for line := range strings.SplitSeq(strings.TrimSpace(stdout), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[1] != "static" {
-			units = append(units, strings.TrimSuffix(fields[0], suffix))
+		if len(fields) < 2 || fields[1] == "static" {
+			continue
 		}
+
+		name, unitType := splitUnitName(fields[0])
+		if unitType == "" {
+			continue
+		}
+		units[unitType] = append(units[unitType], name)
 	}
+
 	return units, nil
+}
+
+// splitUnitName splits "foo.service" into "foo" and "service".
+func splitUnitName(unit string) (name, unitType string) {
+	if dot := strings.LastIndexByte(unit, '.'); dot > 0 && dot < len(unit)-1 {
+		return unit[:dot], unit[dot+1:]
+	}
+	return unit, ""
 }

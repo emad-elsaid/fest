@@ -4,6 +4,7 @@ import "github.com/emad-elsaid/types"
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -52,27 +53,67 @@ func PackageGroup(groupNames ...string) {
 
 type pacman struct {
 	yayClient *yay.Client
+
+	local     []expac.Package
+	localRead bool
 }
+
+// pacmanDBPath resolves the local database path.
+var pacmanDBPath = expac.ConfiguredDBPath
 
 func (p pacman) Wanted() []string { return packages }
 
 func (p pacman) ResourceName() string         { return string(ResourcePackages) }
 func (p pacman) Match(want, have string) bool { return want == have }
 
-func (p pacman) ListInstalled() ([]string, error) {
-	stdout, err := types.Cmd("pacman", "-Qq").StdoutErr()
+// localPackages reads the local pacman database once per command.
+func (p *pacman) localPackages() ([]expac.Package, error) {
+	if p.localRead {
+		return p.local, nil
+	}
+
+	local, err := expac.Local(pacmanDBPath())
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(stdout), nil
+
+	p.local = local
+	p.localRead = true
+	return p.local, nil
 }
 
-func (p pacman) ListExplicit() ([]string, error) {
-	stdout, err := types.Cmd("pacman", "-Qeq").StdoutErr()
+// invalidateLocal drops the cached database read after a mutation.
+func (p *pacman) invalidateLocal() {
+	p.local = nil
+	p.localRead = false
+}
+
+func (p *pacman) ListInstalled() ([]string, error) {
+	local, err := p.localPackages()
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(stdout), nil
+
+	installed := make([]string, len(local))
+	for i, pkg := range local {
+		installed[i] = pkg.Name
+	}
+	return installed, nil
+}
+
+func (p *pacman) ListExplicit() ([]string, error) {
+	local, err := p.localPackages()
+	if err != nil {
+		return nil, err
+	}
+
+	var explicit []string
+	for _, pkg := range local {
+		if pkg.Explicit {
+			explicit = append(explicit, pkg.Name)
+		}
+	}
+	return explicit, nil
 }
 
 // client lazily initializes the embedded yay client once and reuses it for the
@@ -92,6 +133,8 @@ func (p *pacman) client() (*yay.Client, error) {
 }
 
 func (p *pacman) Install(pkgs []string) error {
+	defer p.invalidateLocal()
+
 	client, err := p.client()
 	if err != nil {
 		return err
@@ -101,11 +144,13 @@ func (p *pacman) Install(pkgs []string) error {
 	return client.Install(ctx, pkgs)
 }
 
-func (p pacman) Uninstall(pkgs []string) error {
+func (p *pacman) Uninstall(pkgs []string) error {
+	defer p.invalidateLocal()
 	return types.Sudo("pacman", append([]string{"-Rns"}, pkgs...)...).Interactive().Error()
 }
 
-func (p pacman) MarkExplicit(pkgs []string) error {
+func (p *pacman) MarkExplicit(pkgs []string) error {
+	defer p.invalidateLocal()
 	return types.Sudo("pacman", append([]string{"-D", "--asexplicit"}, pkgs...)...).Interactive().Error()
 }
 
@@ -118,11 +163,16 @@ func (p *pacman) Update() error {
 		return err
 	}
 	slog.Info("Updating system packages")
-	return client.Sysupgrade(context.Background())
+	err = client.Sysupgrade(context.Background())
+	p.invalidateLocal()
+	return err
 }
 
-func (p pacman) GetDependencies() (map[string][]string, error) {
-	installed, err := expac.Local(expac.ConfiguredDBPath())
+func (p *pacman) GetDependencies() (map[string][]string, error) {
+	installed, err := p.localPackages()
+	if errors.Is(err, expac.ErrNoDatabase) {
+		return map[string][]string{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pacman local database: %w", err)
 	}
@@ -162,7 +212,7 @@ func (p pacman) GetDependencies() (map[string][]string, error) {
 	return resolved, nil
 }
 
-func (p pacman) SaveAsGo(wanted []string) error {
+func (p *pacman) SaveAsGo(wanted []string) error {
 	installed, err := p.ListExplicit()
 	if err != nil {
 		return err

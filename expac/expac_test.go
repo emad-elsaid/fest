@@ -33,8 +33,24 @@ bar
 	require.NoError(t, err)
 
 	require.ElementsMatch(t, []Package{
-		{Name: "foo", Depends: []string{"bar>=1.0", "baz"}, Provides: []string{"virtual=1.0"}},
-		{Name: "bar"},
+		{Name: "foo", Depends: []string{"bar>=1.0", "baz"}, Provides: []string{"virtual=1.0"}, Explicit: true},
+		{Name: "bar", Explicit: true},
+	}, packages)
+}
+
+// TestLocalMarksDependencies verifies that a REASON block marks a dependency.
+func TestLocalMarksDependencies(t *testing.T) {
+	dbPath := t.TempDir()
+
+	writeDesc(t, dbPath, "foo-1.0-1", "%NAME%\nfoo\n")
+	writeDesc(t, dbPath, "bar-2.0-1", "%NAME%\nbar\n%REASON%\n1\n")
+
+	packages, err := Local(dbPath)
+	require.NoError(t, err)
+
+	require.ElementsMatch(t, []Package{
+		{Name: "foo", Explicit: true},
+		{Name: "bar", Explicit: false},
 	}, packages)
 }
 
@@ -51,9 +67,8 @@ func TestLocalRejectsUnreadableEntry(t *testing.T) {
 }
 
 func TestLocalMissingDatabase(t *testing.T) {
-	packages, err := Local(filepath.Join(t.TempDir(), "missing"))
-	require.NoError(t, err)
-	require.Empty(t, packages)
+	_, err := Local(filepath.Join(t.TempDir(), "missing"))
+	require.ErrorIs(t, err, ErrNoDatabase)
 }
 
 func TestDBPath(t *testing.T) {

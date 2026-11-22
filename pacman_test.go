@@ -1,9 +1,11 @@
 package fest
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/emad-elsaid/fest/expac"
 	"github.com/stretchr/testify/require"
 )
 
@@ -190,4 +192,24 @@ func TestPacmanBugInstallClientNotRetained(t *testing.T) {
 
 	require.NotNil(t, p.yayClient,
 		"Install must retain the lazily-created yay client; value receiver leaves it nil")
+}
+
+// TestPacmanMissingDatabaseIsAnError verifies that a missing local database is
+// reported instead of being mistaken for a system with no packages installed.
+func TestPacmanMissingDatabaseIsAnError(t *testing.T) {
+	original := pacmanDBPath
+	pacmanDBPath = func() string { return filepath.Join(t.TempDir(), "missing") }
+	t.Cleanup(func() { pacmanDBPath = original })
+
+	p := &pacman{}
+
+	_, err := p.ListInstalled()
+	require.ErrorIs(t, err, expac.ErrNoDatabase)
+
+	_, err = p.ListExplicit()
+	require.ErrorIs(t, err, expac.ErrNoDatabase)
+
+	deps, err := p.GetDependencies()
+	require.NoError(t, err)
+	require.Empty(t, deps)
 }

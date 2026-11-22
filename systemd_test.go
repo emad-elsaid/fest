@@ -38,11 +38,41 @@ func SystemdBugFakeSystemctl(t *testing.T) string {
 	return state
 }
 
+// TestCallbacksInvalidateSystemdCache verifies that units enabled by a lifecycle
+// callback are visible to the next systemd manager.
+func TestCallbacksInvalidateSystemdCache(t *testing.T) {
+	state := SystemdBugFakeSystemctl(t)
+	invalidateSystemdCaches()
+
+	manager := &systemdManager{
+		resource: ResourceUserServices,
+		unitType: "service",
+		user:     true,
+		wanted:   &[]string{},
+	}
+	_, err := manager.ListInstalled()
+	require.NoError(t, err)
+
+	file, err := os.OpenFile(state, os.O_APPEND|os.O_WRONLY, 0)
+	require.NoError(t, err)
+	_, err = file.WriteString("bar.timer enabled\n")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	executeCallbacks("test", map[string][]Callback{"test": {func() {}}}, "after")
+
+	units, err := listSystemdUnits("timer", true)
+	require.NoError(t, err)
+	require.Equal(t, []string{"bar"}, units,
+		"the timer manager must see units enabled by a callback")
+}
+
 // TestSystemdBugInstallInvalidatesCache demonstrates that a systemd manager's
 // memoized installed list is never invalidated by Install/Uninstall, so the
 // "refresh after install" in syncPackages silently returns stale data.
 func TestSystemdBugInstallInvalidatesCache(t *testing.T) {
 	SystemdBugFakeSystemctl(t)
+	invalidateSystemdCaches()
 
 	mgr := &systemdManager{
 		resource: ResourceUserServices,

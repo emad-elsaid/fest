@@ -105,6 +105,7 @@ func (s *systemdManager) ListExplicit() ([]string, error) { return s.ListInstall
 func (s *systemdManager) invalidate() {
 	s.cachedInstalled = nil
 	s.cached = false
+	systemdUnitCaches[s.user].invalidate()
 }
 
 func (s *systemdManager) Install(units []string) error {

@@ -170,6 +170,8 @@ func executeCallbacks(resourceName string, callbackMap map[string][]Callback, wh
 		}()
 	}
 
+	invalidateSystemdCaches()
+
 	return nil
 }
 

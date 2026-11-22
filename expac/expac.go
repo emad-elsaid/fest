@@ -97,18 +97,20 @@ type Package struct {
 	Name     string
 	Depends  []string
 	Provides []string
+	Explicit bool
 }
 
+// ErrNoDatabase reports that pacman's local database directory is missing.
+var ErrNoDatabase = errors.New("pacman local database not found")
+
 // Local returns metadata for every package in the local pacman database under
-// dbPath. A missing database is reported as an empty slice so callers on
-// non-pacman systems get a usable, if empty, result. Any unreadable entry is an
-// error: an incomplete dependency graph could cause wanted packages' dependencies
-// to be treated as removable.
+// dbPath. A missing database yields ErrNoDatabase; any unreadable entry is an
+// error.
 func Local(dbPath string) ([]Package, error) {
 	entries, err := os.ReadDir(filepath.Join(dbPath, "local"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
+			return nil, fmt.Errorf("%w: %s", ErrNoDatabase, dbPath)
 		}
 		return nil, err
 	}
@@ -133,6 +135,7 @@ func Local(dbPath string) ([]Package, error) {
 			Name:     name,
 			Depends:  fields["DEPENDS"],
 			Provides: fields["PROVIDES"],
+			Explicit: len(fields["REASON"]) == 0,
 		})
 	}
 
